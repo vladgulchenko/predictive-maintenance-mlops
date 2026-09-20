@@ -1,0 +1,32 @@
+# data for model
+data/*
+!data/.gitkeep
+!data/raw/
+!data/raw/ai4i2020.csv
+
+
+# python cash and env
+.venv/
+venv/
+ENV/
+env/
+
+# cash compiled python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.pre-commit-cache/
+
+
+#Jupyter temporary files
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# OS & IDE 
+.DS_Store
+
+# VS Code и PyCharm
+.vscode/
+.idea/
