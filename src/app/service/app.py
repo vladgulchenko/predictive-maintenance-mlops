@@ -1,4 +1,6 @@
-from contextlib import contextmanager
+import time
+import uuid
+from contextlib import asynccontextmanager
 
 import json
 import joblib
@@ -31,7 +33,7 @@ class Prediction(BaseModel):
     request_id: str
     latency_ms: float = Field(ge=0)
 
-@contextmanager
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     bundle = joblib.load(settings.model_path)
     app.state.pipeline = bundle["pipeline"]
@@ -46,3 +48,29 @@ async def lifespan(app: FastAPI):
     app.state.pipeline = None
 
 app = FastAPI(title="predictive-maintenance-service",version="1.0",lifespan=lifespan)
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "model_version": getattr(app.state,"version","unknown")}
+
+@app.get("/ready")
+def ready():
+    if getattr(app.state,"pipeline","None") is None:
+        raise HTTPException(status_code=503,detail="Model is not load")
+
+    return {"status":"ready","model_version":getattr(app.state,"version","unknown")}
+
+@app.post("/v1/predict")
+def prediction(x: Features, bg: BackgroundTasks) -> Prediction:
+    t0 = time.perf_counter()
+    request_id = str(uuid.uuid4())
+    payload = x.model_dump()
+    frame = pd.DataFrame([payload]).reindex(columns=app.state.meta["features"])
+
+    score = float(app.state.pipeline.predict_proba(frame)[0,1])
+    latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+    prediction = score >= app.state.meta["threshold"]
+
+    bg.add_task(db.save_prediction,request_id,payload,score,latency_ms,prediction)
+
+    return Prediction(score=score,machine_failure=prediction,model_version=app.state.version,request_id=request_id,latency_ms=latency_ms)
