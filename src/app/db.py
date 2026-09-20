@@ -1,4 +1,5 @@
 import psycopg
+from psycopg.types.json import Json
 
 from app.config import settings
 
@@ -30,5 +31,5 @@ def save_prediction(request_id:str, feature: dict, score: float, latency_ms: flo
         conn.execute(
             "INSERT INTO predictions (request_id,model_version,features,score,prediction,latency_ms)"
             "VALUES (%s,%s,%s,%s,%s,%s)",
-            (request_id,model_version,feature,score,prediction,latency_ms)
+            (request_id,model_version,Json(feature),score,prediction,latency_ms)
         )
