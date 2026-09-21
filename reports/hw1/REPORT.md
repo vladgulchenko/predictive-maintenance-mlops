@@ -25,33 +25,21 @@ LIMIT 5;
 
 ![postgres-select](database_select.jpg)
 
-## Docker Compose
-
-```text
-docker compose up --build
-```
-
-TODO: add screenshot.
-
-## Swagger Predict
-
-```text
-POST /v1/predict
-```
-
-TODO: add screenshot.
-
 ## Kubernetes Pods
 
 ```text
 kubectl get pods
 ```
 
-TODO: add screenshot.
+![k9s-with-2pods](k9s_with_2pods.jpg)
 
-## K9s
+## Kubernetes API Logs
 
-TODO: add screenshot.
+```text
+POST /v1/predict HTTP/1.1 200 OK
+```
+
+![post-log-in-k9s](post-log_in_k9s.jpg)
 
 ## Port Forward Predict
 
@@ -76,11 +64,11 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-TODO: add screenshot.
+![predict-from-port-forward](predict_from_port-forward.jpg)
 
-## Problem Log
+## Журнал Проблем
 
-- VS Code Jupyter kernel did not connect: fixed by selecting the project `.venv`.
-- Notebook outputs polluted Git diffs: added pre-commit output stripping.
-- FastAPI lifespan startup failed: fixed by using an async context manager.
-- PostgreSQL logging failed with `cannot adapt type 'dict'`: fixed by wrapping features with `Json(features)`.
+- VS Code долго подключался к Jupyter kernel. Решение: выбран интерпретатор проекта `.venv`.
+- Notebook сохранял outputs и execution counts. Решение: добавлен pre-commit hook для очистки `.ipynb`.
+- FastAPI падал на старте из-за lifespan context manager. Решение: lifespan переведён на async context manager.
+- PostgreSQL не сохранял prediction logs из-за ошибки `cannot adapt type 'dict'`. Решение: `features` сохраняются в `jsonb` через `Json(features)`.

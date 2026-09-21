@@ -1,6 +1,8 @@
 # Predictive Maintenance MLOps
 
-## Run
+ML-сервис для предсказания риска отказа оборудования.
+
+## Быстрый Запуск
 
 ```powershell
 git clone https://github.com/vladgulchenko/predictive-maintenance-mlops.git
@@ -26,7 +28,15 @@ Ready:
 http://localhost:8000/ready
 ```
 
-## Test Request
+## Тестовый Predict
+
+Endpoint:
+
+```text
+POST /v1/predict
+```
+
+Body:
 
 ```json
 {
@@ -39,13 +49,70 @@ http://localhost:8000/ready
 }
 ```
 
-## Tests
+## Тесты
 
 ```powershell
 uv sync
 uv run pytest
 ```
 
-## Report
+## Kubernetes
 
-See `reports/hw1/REPORT.md`.
+Собрать image:
+
+```powershell
+docker build -t predictive-maintenance-service:1.0 .
+```
+
+Загрузить image в kind:
+
+```powershell
+kind load docker-image predictive-maintenance-service:1.0
+```
+
+Применить манифесты:
+
+```powershell
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+```
+
+Дождаться rollout:
+
+```powershell
+kubectl rollout status deployment/predictive-maintenance-api
+```
+
+Проверить pod'ы:
+
+```powershell
+kubectl get pods
+```
+
+Port-forward:
+
+```powershell
+kubectl port-forward service/predictive-maintenance-api 8000:80
+```
+
+После этого predict доступен локально:
+
+```text
+http://localhost:8000/v1/predict
+```
+
+## Отчёт
+
+Отчёт и скриншоты находятся здесь:
+
+```text
+reports/hw1/REPORT.md
+```
+
+В папке отчёта лежат скриншоты:
+
+- `pytest.jpg`
+- `database_select.jpg`
+- `k9s_with_2pods.jpg`
+- `post-log_in_k9s.jpg`
+- `predict_from_port-forward.jpg`
