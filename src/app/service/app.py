@@ -2,7 +2,6 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-import json
 import joblib
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -37,10 +36,7 @@ class Prediction(BaseModel):
 async def lifespan(app: FastAPI):
     bundle = joblib.load(settings.model_path)
     app.state.pipeline = bundle["pipeline"]
-
-    with open(settings.metadata_path,"r",encoding="utf-8") as f:
-        app.state.meta = json.load(f)
-
+    app.state.meta = bundle["metadata"]
     app.state.version = app.state.meta["model_version"]
 
     db.init()
