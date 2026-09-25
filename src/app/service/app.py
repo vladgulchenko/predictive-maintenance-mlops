@@ -55,7 +55,7 @@ def health():
 
 @app.get("/ready")
 def ready():
-    if getattr(app.state,"pipeline","None") is None:
+    if getattr(app.state,"pipeline",None) is None:
         raise HTTPException(status_code=503,detail="Model is not load")
 
     return {"status":"ready","model_version":getattr(app.state,"version","unknown")}
@@ -65,7 +65,17 @@ def prediction(x: Features, bg: BackgroundTasks) -> Prediction:
     t0 = time.perf_counter()
     request_id = str(uuid.uuid4())
     payload = x.model_dump()
-    frame = pd.DataFrame([payload]).reindex(columns=app.state.meta["features"])
+
+    feature_row = {
+    "Type": payload["Type"],
+    "Air temperature [K]": payload["air_temperature_k"],
+    "Process temperature [K]": payload["process_temperature_k"],
+    "Rotational speed [rpm]": payload["rotational_speed_rpm"],
+    "Torque [Nm]": payload["torque_nm"],
+    "Tool wear [min]": payload["tool_wear_min"],
+}
+
+    frame = pd.DataFrame([feature_row]).reindex(columns=app.state.meta["features"])
 
     score = float(app.state.pipeline.predict_proba(frame)[0,1])
     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
