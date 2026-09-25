@@ -1,27 +1,26 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import joblib
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from typing import Literal
 from pydantic import BaseModel, Field
 
-
-from app.config import settings
 from app import db
+from app.config import settings
 
 
 class Features(BaseModel):
     model_config = {"extra": "forbid"}
 
     Type: Literal["L", "M", "H"]
-    air_temperature_k: float = Field(gt=0)
-    process_temperature_k: float = Field(gt=0)
-    rotational_speed_rpm: int = Field(gt=0)
-    torque_nm: float = Field(ge=0)
-    tool_wear_min: int = Field(ge=0)
+    air_temperature_k: float = Field(ge=295.0, le=315.0)
+    process_temperature_k: float = Field(ge=305.0, le=325.0)
+    rotational_speed_rpm: int = Field(ge=1000, le=3300)
+    torque_nm: float = Field(ge=0.0, le=100.0)
+    tool_wear_min: int = Field(ge=0, le=300)
 
 class Prediction(BaseModel):
     model_config = {"protected_namespaces": ()}

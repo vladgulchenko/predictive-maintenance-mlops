@@ -10,9 +10,20 @@ def test_predict_smoke(client, good_row):
     assert body["request_id"]
 
 
-def test_predict_handles_zero_tool_wear(client, good_row):
-    r = client.post("/v1/predict", json={**good_row, "tool_wear_min": 0})
-    assert r.status_code == 200
+def test_numeric_sensor_values_affect_score(client, good_row):
+    risky_row = {
+        **good_row,
+        "air_temperature_k": 304.2,
+        "process_temperature_k": 313.2,
+        "rotational_speed_rpm": 1200,
+        "torque_nm": 65.0,
+        "tool_wear_min": 220,
+    }
+
+    base_score = client.post("/v1/predict", json=good_row).json()["score"]
+    risky_score = client.post("/v1/predict", json=risky_row).json()["score"]
+
+    assert abs(base_score - risky_score) > 1e-12
 
 
 def test_repeated_predictions_are_stable(client, good_row):

@@ -13,6 +13,11 @@ def test_bad_rotational_speed_is_422(client, good_row):
     assert r.status_code == 422
 
 
+def test_unrealistic_temperature_is_422(client, good_row):
+    r = client.post("/v1/predict", json={**good_row, "air_temperature_k": 5000})
+    assert r.status_code == 422
+
+
 def test_missing_field_is_422(client, good_row):
     row = dict(good_row)
     del row["torque_nm"]
