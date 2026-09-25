@@ -76,6 +76,6 @@ def prediction(x: Features, bg: BackgroundTasks) -> Prediction:
     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
     prediction = score >= app.state.meta["threshold"]
 
-    bg.add_task(db.save_prediction,request_id,payload,score,latency_ms,prediction,app.state.version)
+    bg.add_task(db.save_prediction,request_id,payload,score,latency_ms,prediction,app.state.version,200)
 
     return Prediction(score=score,machine_failure=prediction,model_version=app.state.version,request_id=request_id,latency_ms=latency_ms)
