@@ -11,8 +11,8 @@ request_id      uuid PRIMARY KEY,
 ts              timestamptz NOT NULL DEFAULT now(),
 model_version   text NOT NULL,
 features        jsonb NOT NULL,
-score           double precision NOT NULL,
-prediction      BOOLEAN NOT NULL,
+score           double precision,
+prediction      boolean,
 latency_ms      real,
 status_code integer NOT NULL
 )
@@ -24,7 +24,6 @@ def init() -> None:
     with psycopg.connect(settings.database_url) as conn:
         conn.execute(DDL)
 
-# bg.add_task(db.save_prediction,request_id,payload,score,latency_ms,prediction)
 def save_prediction(request_id:str, feature: dict, score: float, latency_ms: float, prediction: bool,model_version: str,status_code: int):
     if not settings.database_url:
         return

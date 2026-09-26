@@ -1,11 +1,14 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
+from json import JSONDecodeError
 from typing import Literal
 
 import joblib
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app import db
@@ -43,6 +46,33 @@ async def lifespan(app: FastAPI):
     app.state.pipeline = None
 
 app = FastAPI(title="predictive-maintenance-service",version="1.0",lifespan=lifespan)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request,exc):
+    request_id = str(uuid.uuid4())
+
+    try:
+        payload = await request.json()
+    except JSONDecodeError:
+        payload = {}
+
+    db.save_prediction(
+        request_id=request_id,
+        feature=payload,
+        score=None,
+        latency_ms=None,
+        prediction=None,
+        model_version=getattr(app.state, "version", "unknown"),
+        status_code=422,
+    )
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "request_id": request_id,
+        },
+    )
 
 @app.get("/health")
 def health():
