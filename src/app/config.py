@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     model_path: str = "artifacts/predictive_maintenance_pipeline.joblib"
     metadata_path : str = "artifacts/metadata.json"
