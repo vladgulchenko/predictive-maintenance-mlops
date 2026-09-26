@@ -39,9 +39,8 @@ def main() -> int:
 
     for arg in sys.argv[1:]:
         path = Path(arg)
-        if path.suffix == ".ipynb" and path.exists():
-            if strip_notebook(path):
-                changed_paths.append(str(path))
+        if path.suffix == ".ipynb" and path.exists() and strip_notebook(path):
+            changed_paths.append(str(path))
 
     if changed_paths:
         print("Stripped notebook outputs:")
