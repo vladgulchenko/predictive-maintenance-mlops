@@ -51,3 +51,87 @@ jobs:
           tags: ${{ env.IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+    
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions: {contents: read, packages: read}
+
+    steps:
+      - uses: actions/checkout@v7
+      - run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+
+      - uses: helm/kind-action@v1
+        with: {cluster_name: ci}
+
+      - name: образ в кластер
+        run: |
+          docker pull "$IMAGE"
+          kind load docker-image "$IMAGE" --name ci
+
+      - name: подтягиваем секреты
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          kubectl create secret generic pred-main-secrets \
+          --from-literal=POSTGRES_PASSWORD="$DB_PASSWORD" \
+          --from-literal=DATABASE_URL="postgresql://postgres:$DB_PASSWORD@postgres:5432/predictive_maintenance"
+      
+      - name: база
+        run: |
+          kubectl apply -f k8s/postgres.yaml
+          kubectl rollout status deploy/postgres --timeout=180s
+      
+      - name: сервис
+        run: |
+          kubectl apply -f k8s/
+          kubectl set image deploy/predictive-maintenance-api api="$IMAGE"
+          kubectl rollout status deploy/predictive-maintenance-api --timeout=120s
+
+      - name: smoke
+        run: |
+          kubectl port-forward svc/predictive-maintenance-api 8080:80 &
+          PF_PID=$!
+
+          sleep 5
+
+          curl --fail -s http://localhost:8080/health | tee health.json
+          echo
+          
+          curl --fail -s http://localhost:8080/ready | tee ready.json
+          echo
+
+          curl --fail -s -X POST http://localhost:8080/v1/predict \
+            -H "Content-Type: application/json" \
+            -d @good.json | tee pred.json
+          echo
+
+          python3 -c "import json; r=json.load(open('pred.json')); assert 0 <= r['score'] <= 1, r"
+
+          RID=$(python3 -c "import json; print(json.load(open('pred.json'))['request_id'])")
+
+          sleep 2
+
+          kubectl exec deploy/postgres -- psql -U postgres -d predictive_maintenance \
+            -tAc "SELECT count(*) FROM predictions WHERE request_id = '$RID'" | grep -qx 1
+
+          kill "$PF_PID"
+
+
+      - name: диагностика
+        if: failure()
+
+        run: |
+          kubectl get pods -o wide
+          kubectl describe deploy/predictive-maintenance-api | tail -40
+          kubectl describe deploy/postgres | tail -40
+          kubectl logs deploy/predictive-maintenance-api --tail=80 || true
+          kubectl logs deploy/postgres --tail=80 || true
+          kubectl get events --sort-by=.lastTimestamp | tail -80
