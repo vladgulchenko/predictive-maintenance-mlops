@@ -101,9 +101,9 @@ kubectl port-forward service/predictive-maintenance-api 8000:80
 http://localhost:8000/v1/predict
 ```
 
-## Отчёт
+## Отчёты
 
-Отчёт и скриншоты находятся здесь:
+Отчёт по ДЗ 1 и скриншоты находятся здесь:
 
 ```text
 reports/hw1/REPORT.md
@@ -116,3 +116,12 @@ reports/hw1/REPORT.md
 - `k9s_with_2pods.jpg`
 - `post-log_in_k9s.jpg`
 - `predict_from_port-forward.jpg`
+
+Рабочий отчёт по ДЗ 2 находится здесь:
+
+```text
+reports/hw2/REPORT.md
+```
+
+По условию ДЗ 2 финальную версию отчёта нужно продублировать в корень
+репозитория как `REPORT.md`.
