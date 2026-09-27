@@ -18,9 +18,9 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
-          env:
-            - name: LOG_LEVEL
-              value: "INFO"
+          envFrom:
+            - configMapRef: {name: pred-main-config}
+            - secretRef: {name: pred-main-secrets}
           startupProbe:
             httpGet:
               path: /health
