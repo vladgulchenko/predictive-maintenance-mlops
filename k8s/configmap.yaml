@@ -4,4 +4,4 @@ metadata:
   name: pred-main-config
 data:
   LOG_LEVEL: "INFO"
-  MODEL_PATH: "artifacts/predictive_maintenance_pipeline.joblib"
+  MODEL_PATH: "check_not_valid_path_in_ci/cd_pipeline"
