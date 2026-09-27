@@ -80,7 +80,7 @@ jobs:
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          kubectl create secret generic CHECK_IF_SECRET_HAS_OTHER_NAME \
+          kubectl create secret generic pred-main-secrets \
           --from-literal=POSTGRES_PASSWORD="$DB_PASSWORD" \
           --from-literal=DATABASE_URL="postgresql://postgres:$DB_PASSWORD@postgres:5432/predictive_maintenance"
       
