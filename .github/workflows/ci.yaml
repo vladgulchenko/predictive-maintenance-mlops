@@ -54,7 +54,7 @@ jobs:
     
   deploy:
     needs: build
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, kind]
     concurrency: {group: deploy-kind}
     timeout-minutes: 10
