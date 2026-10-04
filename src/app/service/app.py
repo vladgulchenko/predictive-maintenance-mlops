@@ -1,14 +1,18 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
-from json import JSONDecodeError
+from json import JSONDecodeError, loads
+from pathlib import Path
 from typing import Literal
 
 import joblib
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from mlflow import MlflowClient
 from pydantic import BaseModel, Field
 
 from app import db
@@ -34,11 +38,39 @@ class Prediction(BaseModel):
     request_id: str
     latency_ms: float = Field(ge=0)
 
+
+def load_local_bundle():
+    bundle = joblib.load(settings.model_path)
+    return bundle["pipeline"], bundle["metadata"]
+
+
+def load_registry_bundle():
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_registry_uri(settings.mlflow_tracking_uri)
+
+    model_uri = f"models:/{settings.model_name}@{settings.model_alias}"
+    pipeline = mlflow.sklearn.load_model(model_uri)
+
+    client = MlflowClient(
+        tracking_uri=settings.mlflow_tracking_uri,
+        registry_uri=settings.mlflow_tracking_uri,
+    )
+    model_version = client.get_model_version_by_alias(settings.model_name, settings.model_alias)
+    metadata_path = Path(client.download_artifacts(model_version.run_id, "metadata.json"))
+    metadata = loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["model_version"] = f"{settings.model_name}:v{model_version.version}@{settings.model_alias}"
+    return pipeline, metadata
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    bundle = joblib.load(settings.model_path)
-    app.state.pipeline = bundle["pipeline"]
-    app.state.meta = bundle["metadata"]
+    if settings.model_name:
+        pipeline, metadata = load_registry_bundle()
+    else:
+        pipeline, metadata = load_local_bundle()
+
+    app.state.pipeline = pipeline
+    app.state.meta = metadata
     app.state.version = app.state.meta["model_version"]
 
     db.init()

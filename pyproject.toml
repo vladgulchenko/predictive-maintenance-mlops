@@ -13,7 +13,8 @@ dependencies = [
     "pandas",
     "scikit-learn>=1.9,<1.10",
     "joblib",
-    "psycopg[binary]"
+    "psycopg[binary]",
+    "mlflow>=3,<4"
 ]
 
 [dependency-groups]

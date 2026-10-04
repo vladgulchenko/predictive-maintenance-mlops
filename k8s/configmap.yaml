@@ -5,3 +5,6 @@ metadata:
 data:
   LOG_LEVEL: "INFO"
   MODEL_PATH: "artifacts/predictive_maintenance_pipeline.joblib"
+  MODEL_NAME: "predictive-maintenance"
+  MODEL_ALIAS: "champion"
+  MLFLOW_TRACKING_URI: "http://mlflow.mlops:5000"
