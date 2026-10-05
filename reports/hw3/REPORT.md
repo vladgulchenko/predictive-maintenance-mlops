@@ -425,16 +425,14 @@ Requests оставлены без изменений: memory request `256Mi` б
 
 ## 2.7 Red Runs
 
-Этот блок еще нужно выполнить отдельными контролируемыми прогонами:
+Блок выполнен отдельными контролируемыми прогонами: сначала в `main` попадала намеренная поломка,
+затем отдельным fix-PR возвращалось рабочее значение.
 
 | Поломка | Красный run | Зеленый run | Диагноз |
 | --- | --- | --- | --- |
 | Alias модели отсутствует (`MODEL_ALIAS=prod`) | [red deploy job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/37340103056/job/111865257104) | [green deploy run](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/37341857901) | API pod уходит в `CrashLoopBackOff`, deploy падает на rollout/smoke, потому что сервис не может загрузить модель по отсутствующему alias из MLflow Registry. |
 | Runner не видит кластер (`KIND_CLUSTER` неверный) | [red deploy job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/37345166633/job/111882302288) | [green deploy job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/37346123310/job/111885491806) | Step `kind, kubectl and cluster access` падает на `kind export kubeconfig`, потому что runner ищет kind-кластер с неправильным именем. |
-| Ingress мимо (`host` в ingress не совпадает со smoke) | после прогона | после фикса | Ожидаемо: deploy и rollout проходят, но smoke падает на `curl --fail`, потому что Traefik не находит rule для `Host: pred-main.localhost`. |
-
-После отдельных красных прогонов сюда добавляются ссылки на красный и зеленый GitHub Actions run для каждой
-поломки.
+| Ingress мимо (`host` в ingress не совпадает со smoke) | [red smoke job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/37348085864/job/111987154686#step:24:22) | [green deploy job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/37379972462/job/111999581506) | Deploy и rollout проходят, но smoke падает на `curl --fail`, потому что Traefik не находит rule для `Host: pred-main.localhost`. |
 
 В красном прогоне с отсутствующим alias новые pod'ы API не смогли загрузить модель из MLflow Registry и ушли в
 `CrashLoopBackOff`. После возврата `MODEL_ALIAS=champion` rollout и smoke снова прошли успешно.
@@ -442,6 +440,10 @@ Requests оставлены без изменений: memory request `256Mi` б
 В красном прогоне с неверным `KIND_CLUSTER` self-hosted runner был жив, но искал несуществующий kind-кластер.
 Из-за этого deploy упал до применения Kubernetes-манифестов, на шаге `kind export kubeconfig`; после возврата
 `KIND_CLUSTER=pred-main-mlops` runner снова получил kubeconfig и deploy прошел.
+
+В красном прогоне с Ingress host был намеренно задан `pred-main-broken.localhost`, а smoke продолжал отправлять
+запросы с `Host: pred-main.localhost`. Поэтому сервисные pod'ы и rollout были рабочими, но запросы через Traefik
+не попадали в нужный route; после возврата host к `pred-main.localhost` smoke прошел.
 
 ## Eight Questions
 
