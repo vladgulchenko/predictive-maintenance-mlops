@@ -1,6 +1,5 @@
 from locust import HttpUser, between, task
 
-
 PAYLOAD = {
     "Type": "M",
     "air_temperature_k": 298.1,
