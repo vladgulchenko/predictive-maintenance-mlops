@@ -23,7 +23,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: pred-main-broken.localhost
+    - host: pred-main.localhost
       http:
         paths:
           - path: /
