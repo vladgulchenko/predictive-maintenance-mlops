@@ -60,7 +60,7 @@ jobs:
     timeout-minutes: 10
     permissions: {contents: read, packages: read}
     env:
-      KIND_CLUSTER: pred-main-mlops
+      KIND_CLUSTER: pred-main-mlops-broken
 
     steps:
       - uses: actions/checkout@v7
