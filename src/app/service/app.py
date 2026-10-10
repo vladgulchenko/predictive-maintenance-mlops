@@ -13,10 +13,29 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from mlflow import MlflowClient
+from prometheus_client import Counter, Gauge, Histogram
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 from app import db
 from app.config import settings
+
+PREDICTIONS = Counter(
+    "predictive_maintenance_predictions_total",
+    "Predictions by predicted machine failure class",
+    ["machine_failure"],
+)
+SCORE = Histogram(
+    "predictive_maintenance_score",
+    "Predicted machine failure probability",
+    buckets=[i / 10 for i in range(11)],
+)
+MODEL_INFO = Gauge(
+    "predictive_maintenance_model_info",
+    "Model loaded by this pod",
+    ["version"],
+)
+LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1)
 
 
 class Features(BaseModel):
@@ -72,12 +91,14 @@ async def lifespan(app: FastAPI):
     app.state.pipeline = pipeline
     app.state.meta = metadata
     app.state.version = app.state.meta["model_version"]
+    MODEL_INFO.labels(app.state.version).set(1)
 
     db.init()
     yield
     app.state.pipeline = None
 
 app = FastAPI(title="predictive-maintenance-service",version="1.0",lifespan=lifespan)
+Instrumentator().instrument(app, latency_lowr_buckets=LATENCY_BUCKETS).expose(app)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request,exc):
@@ -137,6 +158,8 @@ def prediction(x: Features, bg: BackgroundTasks) -> Prediction:
     score = float(app.state.pipeline.predict_proba(frame)[0,1])
     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
     prediction = score >= app.state.meta["threshold"]
+    PREDICTIONS.labels(str(prediction).lower()).inc()
+    SCORE.observe(score)
 
     bg.add_task(db.save_prediction,request_id,payload,score,latency_ms,prediction,app.state.version,200)
 

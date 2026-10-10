@@ -14,7 +14,9 @@ dependencies = [
     "scikit-learn>=1.9,<1.10",
     "joblib",
     "psycopg[binary]",
-    "mlflow>=3,<4"
+    "mlflow>=3,<4",
+    "prometheus-fastapi-instrumentator>=8.1.0",
+    "prometheus-client>=0.26.0",
 ]
 
 [dependency-groups]
