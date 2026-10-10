@@ -27,7 +27,7 @@ dev = [
     "pytest",
     "httpx",
     "ruff",
-    "dvc>=3.67.1",
+    "dvc[s3]>=3.67.1",
     "locust>=2.46.7",
 ]
 

@@ -111,6 +111,86 @@ The smoke step then checks:
 - Grafana dashboard ConfigMap exists;
 - Grafana answers through ingress on `/api/health`.
 
+## S3 and DVC block
+
+RustFS is used as an S3-compatible object storage for DVC data.
+
+### Storage manifests
+
+RustFS resources are defined in:
+
+```text
+platform/s3.yaml
+```
+
+The manifest creates:
+
+- `rustfs-data` PVC in namespace `mlops`;
+- `rustfs` Deployment;
+- `rustfs` Service with two named ports:
+  - `9000` for S3 API;
+  - `9001` for console UI.
+
+External access is routed through `platform/ingress.yaml`:
+
+```text
+http://s3.localhost
+http://s3-console.localhost
+```
+
+Inside Kubernetes, workloads use:
+
+```text
+http://rustfs.mlops:9000
+```
+
+### Credentials
+
+Local secrets are described in `.env.example` and are not committed through `.env`.
+
+The Kubernetes secret is created from local values:
+
+```powershell
+kubectl create secret generic s3-credentials `
+  -n mlops `
+  --from-literal=AWS_ACCESS_KEY_ID=$env:S3_ACCESS_KEY `
+  --from-literal=AWS_SECRET_ACCESS_KEY=$env:S3_SECRET_KEY `
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### DVC remotes
+
+DVC uses one bucket with two endpoints:
+
+```ini
+[core]
+    remote = laptop
+
+['remote "laptop"']
+    url = s3://pred-main-dvc
+    endpointurl = http://s3.localhost
+
+['remote "cluster"']
+    url = s3://pred-main-dvc
+    endpointurl = http://rustfs.mlops:9000
+```
+
+`laptop` is used from the local machine. `cluster` is prepared for future Airflow/Kubernetes jobs.
+
+Credentials are stored locally in `.dvc/config.local`, which is ignored by git.
+
+The data push was checked with:
+
+```powershell
+uv run dvc push data/raw/ai4i2020.csv.dvc -r laptop -v
+```
+
+Result:
+
+```text
+1 file pushed
+```
+
 ### Evidence placeholders
 
 Add screenshots here after the green run:
@@ -120,4 +200,6 @@ reports/hw4/grafana-dashboard.png
 reports/hw4/prometheus-targets.png
 reports/hw4/actions-monitoring-green.png
 reports/hw4/metrics-endpoint.png
+reports/hw4/rustfs-bucket.png
+reports/hw4/dvc-push-s3.png
 ```
