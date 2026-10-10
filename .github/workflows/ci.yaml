@@ -57,7 +57,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, kind]
     concurrency: {group: deploy-kind}
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions: {contents: read, packages: read}
     env:
       KIND_CLUSTER: pred-main-mlops
@@ -113,10 +113,31 @@ jobs:
           kubectl set image deploy/predictive-maintenance-api api="$IMAGE"
           kubectl rollout status deploy/predictive-maintenance-api --timeout=120s
 
+      - name: monitoring
+        run: |
+          if ! command -v helm >/dev/null 2>&1; then
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+          helm repo update
+
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+            -n monitoring \
+            -f platform/monitoring-values.yaml \
+            --wait \
+            --timeout 5m
+
+          kubectl apply -f k8s/monitoring/
+          kubectl apply -f platform/ingress.yaml
+          kubectl rollout status deploy/monitoring-grafana -n monitoring --timeout=180s
+
       - name: smoke
         run: |
           U="http://$KIND_CLUSTER-control-plane:30080"
           H="Host: pred-main.localhost"
+          GH="Host: grafana.localhost"
 
           curl --fail -s --retry 10 --retry-all-errors -H "$H" "$U/health" | tee health.json
           echo
@@ -134,6 +155,14 @@ jobs:
 
           python3 -c "import json; r=json.load(open('pred.json')); assert 0 <= r['score'] <= 1, r"
 
+          curl --fail -s --retry 10 --retry-all-errors -H "$H" "$U/metrics" | tee metrics.txt
+          grep -q "predictive_maintenance_model_info" metrics.txt
+          grep -q "predictive_maintenance_predictions_total" metrics.txt
+
+          kubectl get servicemonitor predictive-maintenance-api
+          kubectl get configmap predictive-maintenance-dashboard -n monitoring
+          curl --fail -s --retry 10 --retry-all-errors -H "$GH" "$U/api/health" | tee grafana-health.json
+
           RID=$(python3 -c "import json; print(json.load(open('pred.json'))['request_id'])")
 
           sleep 2
@@ -148,8 +177,12 @@ jobs:
         run: |
           kubectl get pods -A -o wide
           kubectl get ingress -A
+          kubectl get servicemonitor -A || true
+          kubectl get configmap -n monitoring | grep dashboard || true
           kubectl describe deploy/predictive-maintenance-api | tail -40
           kubectl describe deploy/postgres | tail -40
+          kubectl describe deploy/monitoring-grafana -n monitoring | tail -40 || true
           kubectl logs deploy/predictive-maintenance-api --tail=80 || true
           kubectl logs deploy/postgres --tail=80 || true
+          kubectl logs deploy/monitoring-grafana -n monitoring --all-containers --tail=80 || true
           kubectl get events --sort-by=.lastTimestamp | tail -80

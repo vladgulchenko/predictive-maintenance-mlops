@@ -131,3 +131,9 @@ reports/hw2/REPORT.md
 ```text
 reports/hw3/REPORT.md
 ```
+
+HW4 monitoring/orchestration report:
+
+```text
+reports/hw4/REPORT.md
+```
