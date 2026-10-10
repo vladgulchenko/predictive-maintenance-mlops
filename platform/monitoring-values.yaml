@@ -1,0 +1,30 @@
+﻿# Lightweight kube-prometheus-stack setup for local kind.
+alertmanager:
+  enabled: false
+
+# These control-plane components are not exposed in kind, otherwise Prometheus would show red targets.
+kubeEtcd: {enabled: false}
+kubeControllerManager: {enabled: false}
+kubeScheduler: {enabled: false}
+kubeProxy: {enabled: false}
+nodeExporter: {enabled: false}
+
+grafana:
+  adminPassword: admin
+  grafana.ini:
+    server:
+      root_url: http://grafana.localhost
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    # Pick up ServiceMonitor resources without requiring the Helm release label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    retention: 2d
+    resources:
+      requests: {cpu: 100m, memory: 400Mi}

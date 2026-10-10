@@ -1,0 +1,14 @@
+﻿# Prometheus Operator scrapes /metrics from the API service every 15 seconds.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: predictive-maintenance-api
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: pred-main-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

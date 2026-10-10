@@ -1,0 +1,140 @@
+﻿# Grafana from kube-prometheus-stack picks up ConfigMaps with grafana_dashboard: "1".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: predictive-maintenance-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  predictive-maintenance.json: |
+    {
+      "uid": "predictive-maintenance-service",
+      "title": "Predictive maintenance service",
+      "refresh": "10s",
+      "time": {"from": "now-30m", "to": "now"},
+      "schemaVersion": 39,
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Model version in pods",
+          "gridPos": {"x": 0, "y": 0, "w": 8, "h": 5},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "count by (version) (predictive_maintenance_model_info)", "legendFormat": "{{version}}", "instant": true}]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Predict requests in 5m",
+          "gridPos": {"x": 8, "y": 0, "w": 8, "h": 5},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "sum(increase(http_requests_total{handler=\"/v1/predict\"}[5m])) or vector(0)"}]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "API container restarts",
+          "gridPos": {"x": 16, "y": 0, "w": 8, "h": 5},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"default\", container=\"api\"}) or vector(0)"}]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "HTTP requests per second",
+          "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "reqps"}},
+          "targets": [{"refId": "A", "expr": "sum by (handler, status) (rate(http_requests_total{handler!=\"/metrics\"}[1m]))", "legendFormat": "{{handler}} {{status}}"}]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Predict latency",
+          "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "s"}},
+          "targets": [
+            {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket{handler=\"/v1/predict\"}[1m])))", "legendFormat": "p50"},
+            {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{handler=\"/v1/predict\"}[1m])))", "legendFormat": "p95"}
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Machine failure prediction share",
+          "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+          "targets": [{"refId": "A", "expr": "sum(rate(predictive_maintenance_predictions_total{machine_failure=\"true\"}[5m])) / sum(rate(predictive_maintenance_predictions_total[5m]))", "legendFormat": "machine_failure=true"}]
+        },
+        {
+          "id": 7,
+          "type": "bargauge",
+          "title": "Prediction score distribution in 15m",
+          "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"orientation": "vertical", "displayMode": "basic", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "sum by (le) (increase(predictive_maintenance_score_bucket[15m]))", "legendFormat": "{{le}}"}]
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "Failed HTTP responses in 5m",
+          "gridPos": {"x": 0, "y": 21, "w": 8, "h": 5},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "sum(increase(http_requests_total{status=~\"4..|5..\", handler!=\"/metrics\"}[5m])) or vector(0)"}]
+        },
+        {
+          "id": 9,
+          "type": "stat",
+          "title": "Failure predictions in 5m",
+          "gridPos": {"x": 8, "y": 21, "w": 8, "h": 5},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "sum(increase(predictive_maintenance_predictions_total{machine_failure=\"true\"}[5m])) or vector(0)"}]
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "Average score in 5m",
+          "gridPos": {"x": 16, "y": 21, "w": 8, "h": 5},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.5}, {"color": "red", "value": 0.8}]}}},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"refId": "A", "expr": "sum(increase(predictive_maintenance_score_sum[5m])) / sum(increase(predictive_maintenance_score_count[5m]))"}]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Predictions per second by class",
+          "gridPos": {"x": 0, "y": 26, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "reqps"}},
+          "targets": [{"refId": "A", "expr": "sum by (machine_failure) (rate(predictive_maintenance_predictions_total[1m]))", "legendFormat": "machine_failure={{machine_failure}}"}]
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Score quantiles",
+          "gridPos": {"x": 12, "y": 26, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+          "targets": [
+            {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(predictive_maintenance_score_bucket[5m])))", "legendFormat": "p50"},
+            {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(predictive_maintenance_score_bucket[5m])))", "legendFormat": "p95"}
+          ]
+        }
+      ]
+    }
