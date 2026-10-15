@@ -264,6 +264,9 @@ def main() -> dict:
         "promoted": promoted,
     }
     print(json.dumps(result, ensure_ascii=False))
+    xcom = Path("/airflow/xcom")
+    if xcom.is_dir():
+        (xcom / "return.json").write_text(json.dumps(result))
     return result
 
 
