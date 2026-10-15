@@ -14,5 +14,9 @@ RUN uv sync --frozen --no-dev
 
 COPY artifacts/ artifacts/
 
+COPY .dvc/config .dvc/config
+COPY data/raw/ai4i2020.csv.dvc data/raw/ai4i2020.csv.dvc
+RUN uv run --no-sync dvc config core.no_scm true
+
 EXPOSE 8000
 CMD [ "uv","run" ,"--no-sync","uvicorn","app.service.app:app","--host","0.0.0.0","--port","8000"]

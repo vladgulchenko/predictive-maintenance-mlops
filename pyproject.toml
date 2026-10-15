@@ -17,6 +17,8 @@ dependencies = [
     "mlflow>=3,<4",
     "prometheus-fastapi-instrumentator>=8.1.0",
     "prometheus-client>=0.26.0",
+    "dvc[s3]>=3.67.1",
+    "pandera[pandas]>=0.26,<1",
 ]
 
 [dependency-groups]
@@ -27,7 +29,6 @@ dev = [
     "pytest",
     "httpx",
     "ruff",
-    "dvc[s3]>=3.67.1",
     "locust>=2.46.7",
 ]
 
