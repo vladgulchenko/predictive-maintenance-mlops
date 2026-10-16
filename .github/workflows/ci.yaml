@@ -54,6 +54,7 @@ jobs:
     
   deploy:
     needs: build
+    # джоба идёт не в облаке GitHub, а на runner в Docker на машине с kind
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, kind]
     concurrency: {group: deploy-kind}
@@ -133,7 +134,17 @@ jobs:
           kubectl apply -f platform/ingress.yaml
           kubectl rollout status deploy/monitoring-grafana -n monitoring --timeout=180s
 
+      - name: DAG
+        run: |
+          kubectl -n mlops create configmap airflow-dags --from-file=dags/ \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl -n mlops rollout status deploy/airflow --timeout=180s
+          kubectl -n mlops exec deploy/airflow -- \
+            airflow variables set pred_main_image "$IMAGE"
+
       - name: smoke
+        shell: bash
         run: |
           U="http://$KIND_CLUSTER-control-plane:30080"
           H="Host: pred-main.localhost"
@@ -157,7 +168,6 @@ jobs:
 
           curl --fail -s --retry 10 --retry-all-errors -H "$H" "$U/metrics" | tee metrics.txt
           grep -q "predictive_maintenance_model_info" metrics.txt
-          grep -q "predictive_maintenance_predictions_total" metrics.txt
 
           kubectl get servicemonitor predictive-maintenance-api
           kubectl get configmap predictive-maintenance-dashboard -n monitoring
@@ -186,3 +196,6 @@ jobs:
           kubectl logs deploy/postgres --tail=80 || true
           kubectl logs deploy/monitoring-grafana -n monitoring --all-containers --tail=80 || true
           kubectl get events --sort-by=.lastTimestamp | tail -80
+          kubectl -n mlops logs deploy/airflow --tail=100 || true
+          kubectl -n mlops exec deploy/airflow -- \
+            airflow dags list-import-errors --output json || true

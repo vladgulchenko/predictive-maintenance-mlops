@@ -4,7 +4,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
-data/
+data/*
+!data/raw/
+data/raw/*
+!data/raw/*.dvc
 k8s/
 tests/
 locustfile.py
