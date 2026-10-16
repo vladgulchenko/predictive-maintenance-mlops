@@ -1,154 +1,255 @@
-# Homework 4 report
+# Домашняя работа 4. Предиктивное обслуживание оборудования
 
-## Monitoring block
+Это рабочий отчет: здесь собраны устройство проекта, результаты проверок и пояснения к решениям. Его можно использовать как справочник для следующих проектов. Изменение в коде, применение в кластере и подтверждение реальным прогоном отмечаются отдельно.
 
-This branch adds Prometheus/Grafana monitoring for the predictive maintenance API.
+Для финальной сдачи итоговый `REPORT.md` должен находиться в корне репозитория. В README будет Quickstart от клонирования до ответа API через Ingress, адреса интерфейсов и запуск переобучения. Сейчас этот файл служит основой для итогового отчета и будущей инструкции запуска.
 
-### Application metrics
+## 1. Состояние работы
 
-The FastAPI service exposes `/metrics` through `prometheus-fastapi-instrumentator`.
+| Блок | Что сделано | Что еще подтвердить или оформить |
+| --- | --- | --- |
+| Метрики и Grafana | Метрики API и модели, ServiceMonitor, dashboard ConfigMap; есть скрин под трафиком | Исправить представление накопительных бакетов скоров или переименовать панель |
+| Генератор трафика | Locust отправляет разные строки датасета через Ingress и проверяет ответы | Обычный прогон подтвержден; прогон во время выката модели впереди |
+| Остановка API | В Deployment добавлен `preStop` с паузой 5 секунд | Применить изменение и проверить rollout под трафиком |
+| DVC и S3 | RustFS, два remote на один бакет, указатель данных в Git; ранее выполнен `dvc push` | Приложить доказательства бакета и состава собранного образа |
+| Pandera | Отдельный модуль, две схемы, тесты, запись результатов в MLflow | Реальный неуспешный validation run с `failure_cases.csv` |
+| Airflow | DAG `validate -> train -> promoted -> rollout`, доставка через CI | Три сценария из задания с доказательствами |
+| CI/CD | Тесты, SHA-образ, ручной self-hosted deploy, smoke | Добавить ссылку на соответствующий зеленый прогон |
+| Запуск с нуля | Манифесты платформы существуют | `up.sh`, `.gitattributes`, полный Quickstart и проверка восстановления |
 
-Standard HTTP metrics are collected automatically:
+## 2. Метрики и дашборд
 
-- request count by handler/status;
-- request latency histogram;
-- `/metrics` endpoint for Prometheus scraping.
+### 2.1. Как идет трафик и собираются метрики
 
-Custom domain metrics are exported from `src/app/service/app.py`:
-
-- `predictive_maintenance_model_info` - loaded model version per pod;
-- `predictive_maintenance_predictions_total` - prediction count by `machine_failure` label;
-- `predictive_maintenance_score` - prediction score histogram.
-
-### Kubernetes manifests
-
-Monitoring-related files:
+Locust работает на ноутбуке, вне Kubernetes. Он отправляет запросы на `http://pred-main.localhost`, поэтому проверяется путь через Ingress, а не подключение к одному pod через port-forward.
 
 ```text
-platform/monitoring-values.yaml
-k8s/monitoring/servicemonitor.yaml
-k8s/monitoring/dashboard.yaml
-platform/ingress.yaml
-k8s/service.yaml
+Locust -> Traefik / Ingress -> API-pod -> предсказание и запись в PostgreSQL
+                                 |
+                                 +-> /metrics <- Prometheus <- ServiceMonitor
+                                                    |
+                                                 Grafana
 ```
 
-`k8s/service.yaml` exposes a named `http` port. `ServiceMonitor` uses this port name to scrape `/metrics` from the API service.
+API обновляет счетчики и гистограммы в памяти процесса. Prometheus самостоятельно опрашивает `/metrics`. Grafana выполняет запросы к Prometheus и отображает результаты; приложение не отправляет метрики напрямую в Grafana.
 
-`platform/monitoring-values.yaml` configures `kube-prometheus-stack` for local kind:
+Метрики отдельны для каждого API-процесса. После перезапуска pod его счетчики начинаются заново. Для анализа их изменения используются `rate()` и `increase()`.
 
-- disables unnecessary control-plane targets for local kind;
-- enables Grafana dashboard sidecar;
-- allows Prometheus to pick up `ServiceMonitor` resources without Helm release labels.
+### 2.2. Технические метрики и бакеты
 
-`k8s/monitoring/dashboard.yaml` defines the Grafana dashboard as a ConfigMap with label `grafana_dashboard: "1"`.
+В [приложении](../../src/app/service/app.py) используется `prometheus-fastapi-instrumentator`:
 
-### Manual deployment commands
+```python
+LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1)
+Instrumentator().instrument(app, latency_lowr_buckets=LATENCY_BUCKETS).expose(app)
+```
 
-Install or update Prometheus/Grafana:
+Экспортируются число HTTP-запросов по обработчикам и статусам, гистограмма задержки и endpoint `/metrics`.
+
+Границы бакетов заданы в секундах: 5, 10, 25, 50, 100, 250, 500 и 1000 мс. В зафиксированном прогоне Locust p50 составил 31 мс, p95 — 49 мс. Границы 25/50/100 мс находятся вокруг рабочего диапазона; верхние границы позволяют наблюдать более медленные ответы.
+
+Клиентские задержки включают сеть и Ingress, поэтому это ориентир для выбора бакетов, а не требование точного совпадения с серверной гистограммой. Квантили Prometheus являются оценками по бакетам: p95 не означает, что каждый запрос занимал ровно это время.
+
+### 2.3. Метрики модели
+
+| Метрика | Тип и метки | Назначение |
+| --- | --- | --- |
+| `predictive_maintenance_model_info` | Gauge, `version` | Версия, загруженная процессом API; после загрузки значение равно 1 |
+| `predictive_maintenance_predictions_total` | Counter, `machine_failure` | Количество положительных и отрицательных предсказаний |
+| `predictive_maintenance_score` | Histogram, границы 0.0, 0.1, ..., 1.0 | Наблюдения вероятностей отказа |
+
+В метках нет `request_id`, идентификаторов оборудования и значений признаков: они создавали бы большое количество уникальных временных рядов. Конкретный запрос ищется по `request_id` в PostgreSQL.
+
+Доля положительных предсказаний показывает, как часто модель выдала класс отказа после применения порога. Средний score усредняет вероятности. Ни одна из этих величин без истинных ответов не является точностью модели.
+
+### 2.4. Какие файлы связывают приложение и мониторинг
+
+| Файл | Назначение |
+| --- | --- |
+| [platform/monitoring-values.yaml](../../platform/monitoring-values.yaml) | Настройки monitoring-чарта для kind, обнаружение ServiceMonitor и dashboard ConfigMap |
+| [k8s/service.yaml](../../k8s/service.yaml) | Service API с именованным портом `http` |
+| [k8s/monitoring/servicemonitor.yaml](../../k8s/monitoring/servicemonitor.yaml) | Сбор `/metrics` через порт Service `http` каждые 15 секунд |
+| [k8s/monitoring/dashboard.yaml](../../k8s/monitoring/dashboard.yaml) | Dashboard ConfigMap с меткой `grafana_dashboard: "1"` |
+| [platform/ingress.yaml](../../platform/ingress.yaml) | Маршруты API и Grafana по разным Host |
+| [k8s/deployment.yaml](../../k8s/deployment.yaml) | Запуск API, probes, ресурсы и `preStop` |
+
+ServiceMonitor выбирает Service по метке `app: pred-main-api`. Его `port: http` — имя порта Service, а не числовой порт контейнера. Prometheus Operator использует этот объект для настройки сбора метрик.
+
+Sidecar Grafana подхватывает dashboard ConfigMap. Описание панелей хранится в Git и доставляется вместе с ресурсами приложения, а не существует только как ручная настройка интерфейса.
+
+### 2.5. Подготовка платформы и обычный deploy
+
+Prometheus/Grafana устанавливаются отдельно при подготовке платформы. `monitoring-values.yaml` — параметры Helm-чарта, а не готовый манифест для `kubectl apply`. Helm формирует ресурсы из шаблонов и values и сам отправляет запросы Kubernetes API.
+
+В текущем CI установка Helm и повторный upgrade monitoring-чарта при каждом deploy API убраны. Платформа, включая namespace `monitoring`, Prometheus Operator и его CRD, должна быть подготовлена заранее. Эту подготовку предстоит закрепить в `platform/up.sh`; на момент отчета скрипт еще не добавлен.
+
+После обновления API выполняется шаг `monitoring and DAG`:
+
+```bash
+kubectl apply -f k8s/monitoring/
+
+kubectl -n mlops create configmap airflow-dags --from-file=dags/ \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n mlops rollout status deploy/airflow --timeout=180s
+kubectl -n mlops exec deploy/airflow -- \
+  airflow variables set pred_main_image "$IMAGE"
+```
+
+Обновляются ресурсы мониторинга приложения, ConfigMap с DAG и переменная образа. Grafana, Prometheus и Airflow заново не устанавливаются. Ingress применяется выше, в шаге `service`.
+
+`rollout status` ожидает готовности Airflow, но не запускает DAG. Файлы DAG приходят в Airflow через смонтированную ConfigMap; DAG processor разбирает их, scheduler планирует выполнение. Доставка файла и запуск переобучения — разные действия.
+
+### 2.6. Генератор трафика: Locust
+
+Используется существующий [load/locustfile.py](../../load/locustfile.py). Отдельный `scripts/traffic.py` не нужен: для текущей задачи он дублировал возможности Locust и был удален.
+
+При загрузке locustfile CSV читается один раз. Выбираются шесть признаков и переводятся в названия полей API:
+
+| Столбец CSV | Поле API |
+| --- | --- |
+| `Type` | `Type` |
+| `Air temperature [K]` | `air_temperature_k` |
+| `Process temperature [K]` | `process_temperature_k` |
+| `Rotational speed [rpm]` | `rotational_speed_rpm` |
+| `Torque [Nm]` | `torque_nm` |
+| `Tool wear [min]` | `tool_wear_min` |
+
+Target `Machine failure`, идентификаторы и столбцы причин отказа не отправляются. Каждый запрос использует случайную строку реальных признаков, поэтому ответы модели различаются и модельные панели получают содержательные данные.
+
+После запроса каждый виртуальный пользователь ждет от 0,5 до 1,5 секунды. Пять пользователей не означают ровно пять RPS: частота зависит также от задержки ответа и случайных пауз. Это умеренный поток для наблюдения, а не поиск предела производительности.
+
+С `catch_response=True` проверяются HTTP 200, корректный JSON и числовой `score` от 0 до 1. Неподходящие ответы учитываются в ошибках Locust. Намеренно невалидные запросы в этом сценарии не отправляются.
+
+### 2.7. Как повторить прогон
+
+Предусловия: платформа и API уже работают, локальные S3 credentials для DVC настроены. Команды выполняются из корня проекта.
 
 ```powershell
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
+# Скачать CSV, если его еще нет локально.
+uv run dvc pull -r laptop
 
-kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-helm upgrade --install monitoring prometheus-community/kube-prometheus-stack `
-  -n monitoring `
-  -f platform/monitoring-values.yaml
+# Запустить UI; терминал оставить работающим.
+uv run locust -f load/locustfile.py --host http://pred-main.localhost
 ```
 
-Apply monitoring manifests and ingress:
+UI находится на `http://localhost:8089`. Это локальный процесс на ноутбуке; для UI не нужен Kubernetes Ingress. `--host` задает другой адрес — API, куда Locust отправляет нагрузку через Ingress.
+
+Для умеренного повторного прогона задать 5 пользователей и подключение 1 пользователь/с. Если время не ограничено, остановить тест кнопкой Stop. Результаты остаются доступны в UI до завершения процесса; через Download Data можно сохранить CSV статистики.
+
+Для автоматической остановки через пять минут:
 
 ```powershell
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/monitoring/servicemonitor.yaml
-kubectl apply -f k8s/monitoring/dashboard.yaml
-kubectl apply -f platform/ingress.yaml
+uv run locust -f load/locustfile.py `
+  --host http://pred-main.localhost `
+  --autostart --users 5 --spawn-rate 1 --run-time 5m
 ```
 
-Check the setup:
+Это рекомендуемая команда следующего прогона, а не доказательство длительности уже снятого теста. Скорость подключения 1/с также не показана на предоставленном снимке.
 
-```powershell
-kubectl get pods -n monitoring
-kubectl get servicemonitor -A
-kubectl get cm predictive-maintenance-dashboard -n monitoring --show-labels
-curl http://pred-main.localhost/metrics
+Во время трафика открыть `http://grafana.localhost`, дашборд **Predictive maintenance service**, выбрать интервал с нагрузкой и обновление 10 секунд. Дождаться заполнения графиков; снимки делать, пока трафик еще идет.
+
+### 2.8. Результат зафиксированного прогона
+
+Числа ниже прочитаны со скрина Locust. На момент снимка статус был `RUNNING`: это статистика к моменту снимка, а не подтвержденный итог после остановки.
+
+| Показатель | Значение |
+| --- | --- |
+| Адрес | `http://pred-main.localhost` |
+| Запрос | `POST /v1/predict` |
+| Пользователи | 5 |
+| Запросы | 4 033 |
+| Ошибки | 0, или 0% |
+| Текущий RPS на снимке | 4,9 |
+| p50 | 31 мс |
+| p95 | 49 мс |
+| p99 | 64 мс |
+| Средняя задержка | 32,77 мс |
+| Минимум / максимум | 18 / 137 мс |
+| Версия модели на скрине Grafana | `predictive-maintenance:v2@champion` |
+| Длительность | По скринам точно не установлена; отдельно не зафиксирована |
+
+![Locust: 5 пользователей, 4 033 запроса через Ingress и 0 ошибок](locust-statistics.png)
+
+На Grafana видны рост RPS `/v1/predict`, p50/p95, положительные и отрицательные предсказания, средний score и версия модели. Панель HTTP-ошибок показывает 0.
+
+![Grafana под трафиком: версия модели, RPS, задержки и метрики предсказаний](grafana-overview.png)
+
+Как читать эти результаты:
+
+- Locust считает запросы с начала прогона, а `Predict requests in 5m` — прирост за последние пять минут. Поэтому 4 033 и 1 436 на снимках не должны совпадать.
+- Locust измеряет время со стороны клиента, Grafana оценивает серверные квантили по бакетам и временному окну. Их p50/p95 не обязаны совпадать.
+- `Model version in pods` использует `count by (version)`. Число 3 на снимке — количество наблюдаемых рядов с этой версией; `v2` в подписи — версия модели, а не число pod или перезапусков.
+- `Failure predictions in 5m` около 57,1 — оценка количества предсказанных отказов оборудования, не ошибок сервиса. Дробная часть возникает из-за экстраполяции `increase()`.
+- `Average score in 5m` около 7,30% — средняя вероятность отказа, не точность модели и не процент ошибочных запросов.
+
+**Ограничение панели скоров.** `Prediction score distribution in 15m` пока показывает накопительные бакеты. Столбец `le="0.5"` содержит все score <= 0,5, а не только интервал 0,4-0,5; `+Inf` содержит все наблюдения. Перед финальным оформлением панель нужно исправить или переименовать. Сейчас это нельзя описывать как обычное распределение по отдельным интервалам. Дополнительные модельные метрики уже подтверждены долей положительных ответов, средним score и частотой предсказаний по классам.
+
+Вывод: под умеренным трафиком через Ingress API возвращал предсказания без зафиксированных Locust ошибок, а технические и модельные метрики отображались в Grafana. Прогон не устанавливает максимальную пропускную способность и не подтверждает работу без ошибок во время rollout.
+
+### 2.9. preStop и остановка API
+
+В [Deployment API](../../k8s/deployment.yaml) добавлен hook:
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["sh", "-c", "sleep 5"]
 ```
 
-Grafana is available at:
+При штатной остановке kubelet выполняет hook перед отправкой сигнала завершения приложению. API остается работающим во время паузы. Это дает время распространиться изменениям backend endpoints и снижает риск запроса к уже остановленному процессу.
 
-```text
-http://grafana.localhost
-```
+Две реплики сами по себе не устраняют гонку между остановкой приложения и обновлением маршрутизации. Пауза 5 секунд — начальный запас, а не гарантия отсутствия ошибок. Она входит в общий grace period завершения pod, после нее должно оставаться время на graceful shutdown.
 
-Credentials:
+На момент отчета изменение добавлено в файл. Его применение в кластере и rollout под трафиком еще не подтверждены. Для изменения hook пересборка образа не нужна, но требуется обновление шаблона Deployment. При ручном применении учитывать статический тег `:1.0` в YAML: нельзя случайно заменить им работающий SHA-образ. CI после применения манифеста устанавливает нужный `$IMAGE`.
 
-```text
-admin / admin
-```
+### 2.10. Smoke в CI
 
-### CI/CD deployment logic
+В [ci.yaml](../../.github/workflows/ci.yaml) deploy выполняется вручную на `main` через self-hosted runner после тестов и сборки. Smoke проверяет:
 
-The deploy job still runs only for manual `workflow_dispatch` on `main` and uses the self-hosted kind runner.
+1. `/health` и `/ready` API через Ingress.
+2. Формат версии `predictive-maintenance:v...@champion` в health-ответе.
+3. Предсказание на `good.json` и score от 0 до 1.
+4. Наличие имени `predictive_maintenance_model_info` в `/metrics`.
+5. Наличие ServiceMonitor и dashboard ConfigMap.
+6. Ответ Grafana через Ingress на `/api/health`.
+7. Запись данного предсказания в PostgreSQL по `request_id`.
 
-The monitoring step runs after the API service rollout:
+Счетчик предсказаний больше не проверяется поиском имени: запрос предсказания и `/metrics` могут обслужить разные pod, а наличие имени не доказывает увеличение. Метрика версии устанавливается при загрузке модели.
 
-1. Ensures Helm is available on the self-hosted runner.
-2. Adds and updates the `prometheus-community` Helm repo.
-3. Creates the `monitoring` namespace if it does not exist.
-4. Installs or upgrades `kube-prometheus-stack` with `platform/monitoring-values.yaml`.
-5. Applies `k8s/monitoring/` resources.
-6. Re-applies `platform/ingress.yaml`, including `grafana.localhost`.
-7. Waits for `monitoring-grafana` rollout.
+`run` выполняется на runner. JSON-ответы сохраняются там же, и Python проверяет локальные файлы. `shell: bash` включает в GitHub Actions обработку ошибок конвейеров через `pipefail`, чтобы сбой `curl` не маскировался успешным `tee`. Smoke не запускает переобучение и не заменяет проверку Airflow.
 
-The smoke step then checks:
+### 2.11. Соответствие блоку задания
 
-- API `/health`;
-- API `/ready`;
-- prediction response;
-- `/metrics` contains predictive maintenance metrics;
-- `ServiceMonitor` exists;
-- Grafana dashboard ConfigMap exists;
-- Grafana answers through ingress on `/api/health`.
+| Требование | Доказательство | Состояние |
+| --- | --- | --- |
+| HTTP-метрики и свои бакеты | `src/app/service/app.py`, скрин Grafana | Реализовано, метрики видны под трафиком |
+| Версия и дополнительные метрики модели | Скрин Grafana | Подтверждено; ограничение панели бакетов описано выше |
+| ServiceMonitor и dashboard ConfigMap | `k8s/monitoring/` | Реализовано; заполнение панелей подтверждает сбор данных |
+| Трафик через Ingress со своими признаками | `load/locustfile.py`, скрин Locust | Подтверждено |
+| preStop с паузой | `k8s/deployment.yaml` | Добавлен в файл; rollout-проверка впереди |
+| Smoke по версии модели | `.github/workflows/ci.yaml` | Реализовано; ссылку на Actions добавить при сборе доказательств |
 
-## S3 and DVC block
+Позже отдельно выполнить продвижение модели через Airflow при работающем Locust. Для него нужны граф DAG, переключение версии на Grafana и статистика без ошибок за время выката. Обычный прогон выше не подменяет этот сценарий.
 
-RustFS is used as an S3-compatible object storage for DVC data.
+## 3. Данные в DVC и S3
 
-### Storage manifests
+### 3.1. Хранилище
 
-RustFS resources are defined in:
+RustFS используется как S3-совместимое хранилище DVC. [platform/s3.yaml](../../platform/s3.yaml) описывает PVC `rustfs-data` на 2 GiB, Deployment `rustfs` и Service в namespace `mlops`.
 
-```text
-platform/s3.yaml
-```
+| Адрес | Назначение |
+| --- | --- |
+| `http://s3.localhost` | S3 API с ноутбука через Ingress |
+| `http://s3-console.localhost` | Консоль RustFS |
+| `http://rustfs.mlops:9000` | S3 API из pod внутри кластера |
 
-The manifest creates:
+Service предоставляет порт 9000 для API и 9001 для консоли. Разные внешние Host направляются Ingress на соответствующие порты.
 
-- `rustfs-data` PVC in namespace `mlops`;
-- `rustfs` Deployment;
-- `rustfs` Service with two named ports:
-  - `9000` for S3 API;
-  - `9001` for console UI.
+### 3.2. Credentials
 
-External access is routed through `platform/ingress.yaml`:
-
-```text
-http://s3.localhost
-http://s3-console.localhost
-```
-
-Inside Kubernetes, workloads use:
-
-```text
-http://rustfs.mlops:9000
-```
-
-### Credentials
-
-Local secrets are described in `.env.example` and are not committed through `.env`.
-
-The Kubernetes secret is created from local values:
+Названия локальных параметров описаны в [.env.example](../../.env.example). Рабочий `.env` не коммитится. PowerShell не загружает его автоматически: перед следующей командой переменные `$env:S3_ACCESS_KEY` и `$env:S3_SECRET_KEY` должны быть заданы.
 
 ```powershell
 kubectl create secret generic s3-credentials `
@@ -158,48 +259,53 @@ kubectl create secret generic s3-credentials `
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### DVC remotes
+S3 Secret создается при подготовке платформы. DAG передает его pod через `env_from`; DVC получает `AWS_ACCESS_KEY_ID` и `AWS_SECRET_ACCESS_KEY`. Локальные credentials DVC хранятся в игнорируемом `.dvc/config.local`.
 
-DVC uses one bucket with two endpoints:
+### 3.3. Один бакет и два remote
+
+В [.dvc/config](../../.dvc/config) настроено:
 
 ```ini
 [core]
     remote = laptop
-
 ['remote "laptop"']
     url = s3://pred-main-dvc
     endpointurl = http://s3.localhost
-
 ['remote "cluster"']
     url = s3://pred-main-dvc
     endpointurl = http://rustfs.mlops:9000
 ```
 
-`laptop` is used from the local machine. `cluster` is prepared for future Airflow/Kubernetes jobs.
+Оба remote обращаются к одному бакету. Отличается сетевой путь: `laptop` используется локально, `cluster` — из pod проверки и обучения.
 
-Credentials are stored locally in `.dvc/config.local`, which is ignored by git.
-
-The data push was checked with:
+Ранее загрузка проверялась командой:
 
 ```powershell
 uv run dvc push data/raw/ai4i2020.csv.dvc -r laptop -v
 ```
 
-Result:
+Был получен результат `1 file pushed`. Скрин бакета и вывод команды еще нужно приложить к итоговому отчету; текстовое описание не подменяет эти доказательства.
 
-```text
-1 file pushed
-```
+CSV не хранится в Git. [Dockerfile](../../Dockerfile) копирует `.dvc/config` и `data/raw/ai4i2020.csv.dvc`; CSV скачивается перед проверкой и обучением. В образе включен `core.no_scm=true`, поскольку `.git` не копируется. Хеш `data_md5` записывается в MLflow при валидации и обучении.
 
-### Evidence placeholders
+## 4. Журнал проблем и решений
 
-Add screenshots here after the green run:
+| Проблема | Причина | Решение и результат |
+| --- | --- | --- |
+| Повторный Helm upgrade при каждом deploy API | Смешались подготовка платформы и доставка приложения | Установка стека убрана из deploy; остались ServiceMonitor, dashboard и DAG. Первую установку предстоит закрепить в `up.sh` |
+| Пустые панели до нагрузки | В окне были в основном probes `/ready`, а не поток `/v1/predict` | После запуска Locust через Ingress панели наполнились |
+| Один постоянный payload Locust | Признаки и ответы не менялись | Используются разные строки датасета, структура запроса проверена по API-схеме |
+| Дублирующий генератор `traffic.py` | Уже существовал Locust для HTTP-трафика | Дополнительный скрипт удален, доработан `load/locustfile.py` |
+| Недоступный UI Locust после короткой проверки | Headless-прогон не поднимает UI и уже завершился; причина конкретного браузерного отказа отдельно не диагностировалась | Разделены запуск UI, ограничение времени теста и время жизни процесса |
+| Панель score выглядит как набор высоких столбцов | Показаны накопительные бакеты | Ограничение зафиксировано; перед финальной сдачей исправить запросы или название |
 
-```text
-reports/hw4/grafana-dashboard.png
-reports/hw4/prometheus-targets.png
-reports/hw4/actions-monitoring-green.png
-reports/hw4/metrics-endpoint.png
-reports/hw4/rustfs-bucket.png
-reports/hw4/dvc-push-s3.png
-```
+## 5. Что добавить перед финальной сдачей
+
+- Подтверждение применения `preStop` и непрерывного трафика при rollout модели.
+- Три сценария Airflow: продвижение, отказ гейта, плохие данные и восстановление.
+- Реальный validation run в MLflow с `valid=false` и `failure_cases.csv`.
+- Ссылку на зеленый Actions run с тестами Pandera и self-hosted deploy.
+- Скрин бакета и вывод состава папки данных в собранном образе, где находятся только DVC-указатели.
+- `up.sh`, `.gitattributes`, Quickstart и проверку восстановления с нуля.
+- Общую схему системы, таблицу хранения и восстановления версий, ответы на восемь вопросов и раздел переделок при наличии фидбэка.
+- Итоговый отчет в корне и согласованный README. Неподтвержденные пункты не отмечать выполненными.
