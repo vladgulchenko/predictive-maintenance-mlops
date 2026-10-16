@@ -11,3 +11,6 @@ data/raw/*
 k8s/
 tests/
 locustfile.py
+.dvc/cache/
+.dvc/tmp/
+.dvc/config.local
