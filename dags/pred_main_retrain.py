@@ -19,7 +19,9 @@ from kubernetes.client import models as k8s
     schedule=CronTriggerTimetable("0 3 * * *", timezone="Europe/Minsk"),
     catchup=False,
     max_active_runs=1,
-    params={"n_estimators": Param(300, type="integer", minimum=1, description="Количество деревьев RandomForest")},
+    params={"n_estimators": Param(300, type="integer", minimum=1, description="Количество деревьев RandomForest"),
+            "max_depth": Param(None, type=["null", "integer"], minimum=1, description="Глубина деревьев RandomForest"),
+            "min_samples_leaf": Param(2, type="integer",  minimum=1, description="Количество элементов в листе дерева RandomForest")},
     tags=["predictive-maintenance", "retraining"],
 )
 def pred_main_retrain():
@@ -61,7 +63,7 @@ def pred_main_retrain():
                 " && uv run --no-sync python -m app.train"
             ),
         ],
-        env_vars={"MLFLOW_TRACKING_URI": "http://mlflow.mlops:5000", "N_ESTIMATORS": "{{ params.n_estimators }}"},
+        env_vars={"MLFLOW_TRACKING_URI": "http://mlflow.mlops:5000", "N_ESTIMATORS": "{{ params.n_estimators }}", "MAX_DEPTH": "{{ params.max_depth }}", "MIN_SAMPLES_LEAF": "{{ params.min_samples_leaf }}"},
         env_from=[k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="s3-credentials"))],
         do_xcom_push=True,
         get_logs=True,
