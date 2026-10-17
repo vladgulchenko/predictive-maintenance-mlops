@@ -1,8 +1,5 @@
 # data for model
-data/*
-!data/.gitkeep
-!data/raw/
-!data/raw/ai4i2020.csv
+# CSV исключен в data/raw/.gitignore, указатели DVC остаются видимыми.
 
 
 # python cash and env
