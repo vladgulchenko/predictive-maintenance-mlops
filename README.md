@@ -35,15 +35,19 @@
 | Git и Git Bash на Windows | Клонирование репозитория и запуск Bash-команд | [Git](https://git-scm.com/downloads/), [Git for Windows](https://gitforwindows.org/) |
 | Python **3.11 или 3.12** | Локальные проверка данных и обучение | [Python](https://www.python.org/downloads/) |
 | uv | Установка Python-зависимостей и запуск команд проекта | [uv](https://docs.astral.sh/uv/getting-started/installation/) |
-| Docker Desktop на Windows / Docker Engine на Linux | Контейнеры и узел kind | [Docker Desktop](https://docs.docker.com/desktop/), [Docker Engine](https://docs.docker.com/engine/install/) |
+| Docker Desktop на Windows/macOS / Docker Engine на Linux | Контейнеры и узел kind | [Docker Desktop](https://docs.docker.com/desktop/), [Docker Engine](https://docs.docker.com/engine/install/) |
 | kind | Создание локального Kubernetes-кластера | [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) |
 | kubectl | Управление ресурсами Kubernetes | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
 | Helm | Установка компонентов платформы из чартов | [Helm](https://helm.sh/docs/intro/install/) |
 | curl с `--aws-sigv4` | HTTP-проверки и создание S3-бакета | [curl](https://curl.se/download.html) |
 
-Маршрут рассчитан на **Linux x64 или Windows с Docker Desktop в режиме Linux-контейнеров**. После установки открой новый терминал, чтобы обновился PATH. Все команды ниже выполняются в **Bash**; на Windows открой **Git Bash**, не PowerShell. Docker должен быть запущен, порт 80 свободен.
+**Желательно, но необязательно:** [k9s](https://k9scli.io/topics/install/) — терминальный интерфейс для просмотра pod, событий и логов. Для запуска платформы он не нужен; после создания кластера можно открыть `k9s --context kind-pred-main-mlops -A`. Не удаляй ресурсы через интерфейс, если нужен только просмотр.
 
-Проверка перед клонированием:
+Все команды ниже выполняются **из корня уже клонированного репозитория в Bash**: на Windows используй **Git Bash**, на Linux/macOS — `bash`. Исключение — отдельно помеченные команды Windows CMD. Docker должен быть запущен (на Windows — Linux-контейнеры), порт 80 свободен. После установки инструментов открой новый терминал, чтобы обновился PATH. На macOS полный маршрут пока не проверен.
+
+**Почему Git Bash:** `up.sh` и команды этого руководства используют синтаксис Bash: `source`, `$VARIABLE`, циклы и переносы строк через `\`. PowerShell — другой язык команд и не исполняет их напрямую. Git Bash позволяет запустить тот же скрипт на Windows без отдельной PowerShell-версии; Docker и Kubernetes при этом остаются на твоем компьютере. Терминал VS Code подходит, если выбран профиль **Git Bash**. Активация Python `.venv` не превращает PowerShell в Bash.
+
+Проверка инструментов:
 
 ```bash
 git --version
@@ -59,27 +63,58 @@ curl --help all | grep -- --aws-sigv4
 
 > Скрипт написан, но полный маршрут в свежем клоне и новом кластере пока не проверен. Не удаляй существующий кластер без сохранения данных PVC. Разбор скрипта: [platform/UP.md](platform/UP.md).
 
-### 1. Репозиторий и настройки
+### 1. Локальные адреса сервисов
 
-Для проверки CI/CD на своей машине сначала сделай Fork на GitHub и включи Actions в форке. Введи HTTPS URL **своего** репозитория; владелец проекта может использовать исходный.
+Адреса `*.localhost` должны указывать на `127.0.0.1` — твой компьютер, где kind принимает HTTP-запросы. Это настройка **hosts, не PATH**; она нужна и браузеру, и Python/DVC. `up.sh` системный hosts не меняет.
 
-```bash
-read -r -p "HTTPS URL вашего репозитория: " REPO_URL
-git clone "$REPO_URL" predictive-maintenance-mlops
-cd predictive-maintenance-mlops
-uv sync --frozen
-test -f .env || cp .env.example .env
-set -a; source .env; set +a
+Если записи уже есть, повторно добавлять их не нужно. При другом IP исправь существующие записи вместо создания дубликатов.
+
+**Windows:** открой **CMD от имени администратора** (не PowerShell и не Git Bash), выполни один раз:
+
+```bat
+echo.>> C:\Windows\System32\drivers\etc\hosts
+echo 127.0.0.1 mlflow.localhost airflow.localhost grafana.localhost pred-main.localhost s3.localhost s3-console.localhost>> C:\Windows\System32\drivers\etc\hosts
+ipconfig /flushdns
 ```
 
-**Ожидаем:** зависимости установлены, локальные настройки загружены. Учебные S3-ключи — `admin/admin123`, Grafana — `admin/admin`. Свои стартовые S3-ключи можно задать в `.env` перед первым запуском. Файл не коммитится.
+Альтернатива: открой `C:\Windows\System32\drivers\etc\hosts` в Блокноте от администратора и добавь ту же строку вручную; сохрани без расширения `.txt`.
+
+**Linux/macOS:** в терминале Bash выполни один раз:
+
+```bash
+printf '\n127.0.0.1 mlflow.localhost airflow.localhost grafana.localhost pred-main.localhost s3.localhost s3-console.localhost\n' | sudo tee -a /etc/hosts
+```
+
+На macOS после изменения сбрось кеш DNS:
+
+```bash
+sudo dscacheutil -flushcache
+sudo killall -HUP mDNSResponder
+```
+
+**Ожидаем:** все шесть адресов направлены на локальный компьютер. Дальше вернись в Bash; на Windows — в Git Bash.
 
 ### 2. Поднять платформу
 
+**Где запускать:** на своем компьютере, в Bash (Windows: Git Bash), **из корня клонированного проекта**, где лежат `README.md`, `.env.example` и каталог `platform/`. Не внутри pod, контейнера или папки `platform/`.
+
+Установи Python-зависимости и создай `.env`, если своего файла еще нет:
+
 ```bash
+uv sync --frozen
+test -f .env || cp .env.example .env
+```
+
+Учебные S3-ключи — `admin/admin123`, Grafana — `admin/admin`. Свои стартовые S3-ключи задай в `.env` **до первого запуска**; файл не коммитится. Затем загрузи настройки в текущий терминал и запусти платформу:
+
+```bash
+set -a; source .env; set +a
+uv run python -c "import socket; print(socket.gethostbyname('s3.localhost')); print(socket.gethostbyname('mlflow.localhost'))"
 bash platform/up.sh
 kubectl get pods -A
 ```
+
+Python-проверка должна показать две строки `127.0.0.1`. Если результат другой или появилась ошибка, исправь hosts из шага 1 и только потом запускай `up.sh`. `set -a; source .env; set +a` экспортирует настройки для последующих команд; в новом Bash-терминале его нужно повторить из папки проекта.
 
 **Ожидаем:** скрипт завершился сообщением «Платформа готова», поды MLflow, RustFS, Airflow, Traefik, monitoring и metrics-server готовы; бакет `pred-main-dvc` создан. API и PostgreSQL появятся позже, после deploy.
 
@@ -94,15 +129,14 @@ kubectl get pods -A
 
 Логин standalone Airflow смотри в `kubectl -n mlops logs deploy/airflow`; credentials не публикуй.
 
-### 3. Проверить DNS и настроить DVC
+### 3. Настроить доступ DVC к S3
 
 ```bash
-uv run python -c "import socket; print(socket.gethostbyname('s3.localhost')); print(socket.gethostbyname('mlflow.localhost'))"
 uv run dvc remote modify --local laptop access_key_id "$S3_ACCESS_KEY"
 uv run dvc remote modify --local laptop secret_access_key "$S3_SECRET_KEY"
 ```
 
-**Ожидаем:** оба имени разрешаются в `127.0.0.1`. Если Python не разрешает их, добавь с правами администратора строку `127.0.0.1 s3.localhost mlflow.localhost` в hosts ОС (Windows: `C:\Windows\System32\drivers\etc\hosts`), затем повтори проверку. Credentials DVC сохраняются только в игнорируемом `.dvc/config.local`.
+**Ожидаем:** команды завершились без ошибок; credentials DVC сохранены только в игнорируемом `.dvc/config.local`. Выполняй их в том же Bash, где загружен `.env`. В новом терминале сначала повтори `set -a; source .env; set +a`.
 
 ### 4. Подготовить и загрузить данные
 
@@ -151,6 +185,8 @@ uv run python -m app.train
 
 ### 6. Подключить свой runner и Secret БД
 
+Для своего развертывания используй Fork с включенными Actions. Runner подключай к своему репозиторию; владелец проекта может использовать исходный.
+
 В своем репозитории: **Settings → Secrets and variables → Actions → New repository secret**. Создай `DB_PASSWORD` со значением из локального `.env` (учебное — `postgres`). Deploy сам создаст Secret БД/API.
 
 Затем **Settings → Actions → Runners → New self-hosted runner → Linux x64**. Возьми свежий registration token и запусти:
@@ -159,6 +195,7 @@ uv run python -m app.train
 <summary>Команды runner в Docker</summary>
 
 ```bash
+read -r -p "HTTPS URL вашего репозитория на GitHub: " REPO_URL
 read -r -s -p "Runner registration token: " RUNNER_TOKEN
 echo
 export REPO_URL RUNNER_TOKEN
