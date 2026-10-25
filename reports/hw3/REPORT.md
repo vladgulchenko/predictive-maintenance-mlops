@@ -3,7 +3,10 @@
 Отчет по ДЗ 3: модель из MLflow Registry в своем kind-кластере, деплой через
 self-hosted runner, версии данных в DVC и автомасштабирование HPA.
 
-Рабочая модель:
+Прогоны и конфигурация относятся к этапу ДЗ 3. Актуальные результаты платформы
+собраны в [итоговом отчете](../../REPORT.md).
+
+Сервис и адреса:
 
 - сервис: `predictive-maintenance-api`;
 - host сервиса: `pred-main.localhost`;
@@ -13,9 +16,9 @@ self-hosted runner, версии данных в DVC и автомасштаби
 
 ## Скриншоты
 
-Скриншоты лежат рядом с отчетом в `reports/hw3/`. В отчете подключены следующие файлы:
+Скриншоты хранятся в `reports/hw3/`.
 
-| Файл | Куда вставляется | Что должно быть видно |
+| Материал | Раздел | Содержимое |
 | --- | --- | --- |
 | `2.1-platform.png` | 2.1 Platform | `kubectl get pods,ingress -A`, pod'ы `Running`, Ingress hosts `pred-main.localhost` и `mlflow.localhost`. |
 | `mlflow-model-registry.png` | 2.2 Training | Registry model `predictive-maintenance`, версии 1-3, aliases `challenger` и `champion`. |
@@ -33,7 +36,7 @@ self-hosted runner, версии данных в DVC и автомасштаби
 | `hpa-k9s.png` | 2.6 HPA | k9s после нагрузки: API pod'ы еще на максимуме, CPU уже успокоился. |
 | `hpa-describe.png` | 2.6 HPA | `kubectl describe hpa`, события `SuccessfulRescale`. |
 | `locust-metrics.png` | 2.6 HPA | Locust percentiles, p95 `5200 ms`. |
-| Скриншоты red runs | 2.7 Red Runs | Добавляются после отдельных красных прогонов. |
+| Прогоны GitHub Actions | 2.7 Red Runs | Ссылки на поломки и успешные прогоны после исправлений. |
 
 ## Чеклист
 
@@ -53,7 +56,7 @@ self-hosted runner, версии данных в DVC и автомасштаби
 | 2.5 MLflow data_md5 | В MLflow есть прогоны с `data_md5=f0adaa9c5e25366c6df1cc2684479871` и `data_md5=5d9ee05b71518e3e7e71e6e60c7da425`. |
 | 2.6 HPA | `k8s/hpa.yaml`: min 2, max 6, target CPU 60%; `metrics-server` установлен с `--kubelet-insecure-tls`. |
 | 2.6 Locust/HPA | HPA вырос `2 -> 4 -> 6`, затем вернулся к 2; `kubectl describe hpa` показывает `SuccessfulRescale`. |
-| 2.7 Красные прогоны | План отдельного блока: alias отсутствует, неверный `KIND_CLUSTER`, несовпадающий Ingress host. |
+| 2.7 Красные прогоны | Отсутствующий alias, неверный `KIND_CLUSTER`, несовпадающий Ingress host; ссылки на поломки и исправления приведены в разделе 2.7. |
 
 ## 2.1 Platform
 
@@ -103,7 +106,7 @@ Gate metric выбран как PR-AUC, потому что класс отка�
 
 Три запуска gate:
 
-| Version | Aliases сейчас | PR-AUC | Решение gate | Run ID | Params |
+| Version | Aliases на снимке | PR-AUC | Решение gate | Run ID | Params |
 | --- | --- | ---: | --- | --- | --- |
 | 1 | - | 0.4950 | Первый запуск, `champion` еще не было -> `promoted=true` | `d007f5a76e8a42f0852561a73cd8d9a4` | `n_estimators=50`, `max_depth=6`, `min_samples_leaf=5` |
 | 2 | - | 0.2937 | Хуже Version 1 -> `promoted=false` | `055c69fbc97f443f833f638e6efccb56` | `n_estimators=5`, `max_depth=2`, `min_samples_leaf=30` |
@@ -232,13 +235,13 @@ Runner name: 5d1f44dd7388
 
 ![GitHub self-hosted runner](github-runner.png)
 
-После сдачи runner нужно выключить:
+Остановка и удаление runner-контейнера:
 
 ```powershell
 docker rm -f gh-runner
 ```
 
-и удалить запись runner в GitHub Settings -> Actions -> Runners.
+Регистрация удаляется отдельно в GitHub Settings -> Actions -> Runners.
 
 ## 2.5 DVC Data Versions
 
@@ -420,8 +423,7 @@ Requests оставлены без изменений: memory request `256Mi` б
 
 ![Locust percentiles](locust-metrics.png)
 
-В ТЗ запрошена таблица из трех прогонов. На текущий момент скриншотом подтвержден один прогон; еще две строки
-нужно добавить после двух дополнительных измерений, чтобы не подставлять в отчет вымышленные p95 и CPU.
+Сохранены результаты одного нагрузочного прогона. Два дополнительных прогона из задания не выполнены.
 
 ## 2.7 Red Runs
 
@@ -548,10 +550,9 @@ ceil(2 * 1000 / 60) = ceil(33.33) = 34
 - При запуске runner из Git Bash сломался mount Docker socket. Deploy упал на `kind export kubeconfig`, потому что
   внутри runner не было `/var/run/docker.sock`. Исправление: пересоздать runner из PowerShell и проверить
   `docker exec gh-runner docker ps`.
-- Один deploy упал на `password authentication failed` к Postgres. Причина: старый Postgres deployment был
-  инициализирован в старом состоянии, а актуальный Kubernetes Secret уже был другим источником правды.
-  Исправление для учебного kind: удалить deployments Postgres/API и дать workflow пересоздать их из актуального
-  secret.
+- Один deploy упал на `password authentication failed` к Postgres: пароль инициализированной базы отличался
+  от значения в Kubernetes Secret. В локальном kind-кластере deployments Postgres/API пересозданы
+  с актуальным Secret.
 - В clean clone DVC не видел данные, потому что путь `../../dvc-storage` из папки `check/predictive-maintenance-mlops`
   указывал на `check/dvc-storage`, а реальный remote лежал в `FINAL_project/dvc-storage`. Исправление для проверки:
   локально переопределить remote через `.dvc/config.local` или клонировать репозиторий рядом с `dvc-storage`.

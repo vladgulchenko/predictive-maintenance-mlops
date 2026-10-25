@@ -14,7 +14,7 @@
 | **2. Метрики и дашборд:** RPS, p50/p95, панели модели и версия под трафиком | [Дашборд](reports/hw4/grafana-overview.png), [Locust](reports/hw4/locust-statistics.png). Показатели и ограничение панели score — в [разделе 3.2](#32-метрики-и-дашборд). |
 | **3. DVC и S3:** указатель в Git, скрин бакета, только .dvc в образе | [Указатель](data/raw/ai4i2020.csv.dvc), [бакет RustFS](reports/hw4/rustfs-bucket.png), [содержимое API-контейнера](reports/hw4/.dvc_in_container.png). Содержимое контейнера из GHCR-образа проверено через `kubectl exec`; способ проверки описан в разделе 3.3. |
 | **4. Pandera:** зеленый CI, valid=false и открытый failure_cases.csv | [Tests job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/38957337197/job/117163397508), [pytest](reports/hw4/pytest_step.png), [неуспешный validate](reports/hw4/validate-run.png), [failure_cases.csv](reports/hw4/validate-artifact.png). |
-| **5. Airflow:** три сценария DAG, Registry с Aliases, переключение версии и трафик без ошибок | [Продвижение](reports/hw4/dag.png), [отказ гейта](reports/hw4/dag_not_promoted.png), [плохая выгрузка](reports/hw4/airflow_after_bad_data.png), [смена версии](reports/hw4/grafana-in-rollout.png), [Locust при выкате](reports/hw4/locust-statistics-rollout.png). После повторного развертывания сохранены [Registry с Aliases](reports/hw4/mlflow_aliases.png) и [успешный Graph](reports/hw4/airflow-graph.png). **НЕ ХВАТАЕТ:** ответа прежней моделью при плохой выгрузке. |
+| **5. Airflow:** три сценария DAG, Registry с Aliases, переключение версии и трафик без ошибок | [Продвижение](reports/hw4/dag.png), [отказ гейта](reports/hw4/dag_not_promoted.png), [плохая выгрузка](reports/hw4/airflow_after_bad_data.png), [смена версии](reports/hw4/grafana-in-rollout.png), [Locust при выкате](reports/hw4/locust-statistics-rollout.png). После повторного развертывания сохранены [Registry с Aliases](reports/hw4/mlflow_aliases.png) и [успешный Graph](reports/hw4/airflow-graph.png). [Контрольный повтор 25 октября](#контрольный-повтор-25-октября-api-при-плохой-выгрузке) подтверждает HTTP 200 с прежней моделью после отказа validate. |
 | **6. CI/CD:** зеленый прогон с runner и шагами deploy | [Прогон 39156310968](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39156310968), [deploy job с шагами runner info, service, monitoring and DAG, smoke](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39156310968/job/117760378407). Все три job завершились успешно. |
 
 ## 2. Схема системы и хранение
@@ -131,7 +131,7 @@ kubectl exec predictive-maintenance-api-7cdbbcb89-f8r9s -- ls data/raw
 
 Расписание — `CronTriggerTimetable("0 3 * * *", timezone="Europe/Minsk")`, без start_date, с `catchup=False` и `max_active_runs=1`. Все приведенные эксперименты запущены вручную. Успех задачи rollout означает запрос рестарта, а не ожидание готовности всех новых pod; смена модели дополнительно видна в Grafana.
 
-Номера версий и Run ID относятся к экспериментам 17–18 октября 2026 года. После пересоздания Registry те же номера могут обозначать другие модели.
+Первые три сценария относятся к экспериментам 17–18 октября 2026 года. Контрольный повтор 25 октября приведен отдельно. После пересоздания Registry те же номера могут обозначать другие модели.
 
 #### Сценарий 1. Новая версия лучше
 
@@ -192,7 +192,7 @@ MLflow run `003551de68234db0a8dcbe560917241b`: FAILED, `valid=false`, плохо
 
 ![Airflow после восстановления: успешный запуск рядом с историческим красным](reports/hw4/provment_of_good_work.png)
 
-На снимках время запусков в UI: 01:34:32 для плохой выгрузки и 01:55:26 после восстановления. Ответы API за интервал плохой выгрузки не сохранены: блокировка обучения сама по себе не доказывает работу прежней модели.
+На снимках время запусков в UI: 01:34:32 для плохой выгрузки и 01:55:26 после восстановления. Ответы API за этот исторический интервал не сохранены; работа прежней модели при плохих данных проверена отдельным повтором 25 октября.
 
 #### Проверка после повторного развертывания
 
@@ -205,6 +205,41 @@ MLflow run `003551de68234db0a8dcbe560917241b`: FAILED, `valid=false`, плохо
 ![Airflow Graph после повторного развертывания: validate, train, promoted и rollout успешны](reports/hw4/airflow-graph.png)
 
 Эти снимки относятся к повторному развертыванию. Метрики и статусы прежних сценариев с v3/v4 приведены выше; номера версий между двумя реестрами не сопоставляются.
+
+#### Контрольный повтор 25 октября: API при плохой выгрузке
+
+Повторно доставлен указатель на CSV с температурой воздуха в Цельсиях под прежним заголовком Кельвинов. [Коммит 6334848](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/63348481e8cb70c837d65b2b01af7d1da7dc2878) меняет только DVC-указатель: хороший MD5 `5d9ee05b71518e3e7e71e6e60c7da425` заменен на `ca52c8f7e1e7ab3359addc684be2c74c`. [PR #36](https://github.com/vladgulchenko/predictive-maintenance-mlops/pull/36) слит в main; [deploy плохой выгрузки](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/40218178742/job/121244070489) завершился успешно.
+
+Во всех трех запросах через Swagger использован один payload `good.json`: Type M, температуры 298,1/308,6 K, 1551 об/мин, момент 42,8 Н·м, износ 0. Ответы содержат `model_version=predictive-maintenance:v2@champion`, `score=0` и `machine_failure=false`.
+
+| Этап | Время 25.10.2026, UTC | Результат и доказательство |
+| --- | --- | --- |
+| До изменения данных | 16:09:12 | [Predict HTTP 200, модель v2](reports/hw4/data-recheck/responce-before.png) |
+| Доставлен плохой указатель | Deploy завершен в 17:51:44 | [Tests, build и deploy успешны](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/40218178742) |
+| Запущен DAG на плохих данных | Run ID содержит 17:53:37 | [Validate failed, train/promoted/rollout upstream_failed](reports/hw4/data-recheck/dag-before.png) |
+| После отказа validate, до восстановления | 17:55:26 | [Predict HTTP 200, прежняя модель v2](reports/hw4/data-recheck/responce_after_validate.png) |
+| Доставлен хороший указатель | Deploy завершен в 18:10:21 | [Deploy восстановления успешен](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/40219793665/job/121248940474) |
+| DAG после восстановления | Run ID содержит 18:19:49 | [Validate/train/promoted success, rollout skipped](reports/hw4/data-recheck/dag-after.png) |
+| Ответ API после восстановления | 18:21:52 | [Predict HTTP 200, модель v2](reports/hw4/data-recheck/responce-after.png) |
+
+Время ответов взято из HTTP-заголовка `Date` (GMT), время deploy — из GitHub Actions. Полные Run ID Airflow:
+
+- Плохая выгрузка: `manual__2026-10-25T17:53:37.199913+00:00`, статус FAILED, длительность 14,951 с.
+- После восстановления: `manual__2026-10-25T18:19:49.611321+00:00`, статус SUCCESS, длительность 23,425 с.
+
+![Predict до поломки: HTTP 200 и predictive-maintenance:v2@champion](reports/hw4/data-recheck/responce-before.png)
+
+![Airflow на плохой выгрузке: validate failed, зависимые задачи не выполнялись](reports/hw4/data-recheck/dag-before.png)
+
+![Predict после красного validate, до восстановления: HTTP 200 и прежняя модель v2](reports/hw4/data-recheck/responce_after_validate.png)
+
+Для восстановления [коммит 7014247](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/70142471fe493505e5232f32f49663c5dd02a310) отменил изменение указателя; [PR #37](https://github.com/vladgulchenko/predictive-maintenance-mlops/pull/37) слит в main. После `dvc checkout` и [повторного deploy](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/40219793665) проверка данных и обучение снова прошли. Rollout пропущен: кандидат не получил достаточного улучшения для продвижения.
+
+![Airflow после восстановления: проверка и обучение успешны, rollout пропущен](reports/hw4/data-recheck/dag-after.png)
+
+![Predict после восстановления: HTTP 200 с той же моделью](reports/hw4/data-recheck/responce-after.png)
+
+После отказа validate API ответил прежней моделью до deploy восстановления. Это подтверждает работоспособность predict в момент проверки; непрерывная доступность за весь интервал не измерялась. Отдельные ответы `/health` в этом повторе не сохранены.
 
 ### 3.6. CI/CD целиком
 
@@ -224,8 +259,10 @@ MLflow run `003551de68234db0a8dcbe560917241b`: FAILED, `valid=false`, плохо
 | Плохой указатель данных | [39075314111](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39075314111) | [969573b](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/969573b67eb2cfec442fa1fa6b36eb2326827452), merge 9975dfb |
 | Восстановленный указатель | [39076815188](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39076815188) | [ea6f0e4](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/ea6f0e43ff7369e65c27f9e5055996eea6342d7c), merge revert 89948bf |
 | Deploy после подготовки нового кластера | [39156310968](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39156310968) | [d890aa9](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/d890aa93c8f73331b1ee24c05c0415c6f72be16a) |
+| Контрольный повтор: плохой указатель 25 октября | [40218178742](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/40218178742) | [b15cc47](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/b15cc47efc23d660855cbf220aaa9a514e641d80), merge [6334848](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/63348481e8cb70c837d65b2b01af7d1da7dc2878) |
+| Контрольный повтор: восстановление 25 октября | [40219793665](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/40219793665) | [84f2f8f](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/84f2f8f2ce1a617d916763894eec72521786f360), merge revert [7014247](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/70142471fe493505e5232f32f49663c5dd02a310) |
 
-Во всех четырех прогонах tests, build и deploy завершились успешно. Это прогоны доставки, не запуски DAG. Зеленый deploy плохого указателя ожидаем: проверка семантики CSV выполняется позже в задаче validate.
+Во всех шести прогонах tests, build и deploy завершились успешно. Это прогоны доставки, не запуски DAG. Зеленый deploy плохого указателя ожидаем: проверка семантики CSV выполняется позже в задаче validate.
 
 ## 5. Журнал проблем
 
@@ -246,14 +283,16 @@ MLflow run `003551de68234db0a8dcbe560917241b`: FAILED, `valid=false`, плохо
 | Пункт фидбека | Что сделано | Коммит и подтверждение |
 | --- | --- | --- |
 | Не было Kubernetes-манифестов и команды запуска в kind | Добавлены Deployment с двумя репликами API и Service, затем ConfigMap и PostgreSQL. В README описаны загрузка образа в kind, применение манифестов, rollout и port-forward; текущий Quickstart использует автоматизированный deploy через runner. | [a7eda69: Deployment и Service](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/a7eda69), [a024b4c: PostgreSQL и ConfigMap](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/a024b4c), [433f30f: команды kind](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/433f30f). Проверки: [две реплики API в k9s](reports/hw1/k9s_with_2pods.jpg), [текущие pod платформы](reports/hw4/get-pods.png). |
-| В отчете оставались TODO вместо скриншотов | Убраны заглушки. Отчет содержит результаты pytest и запросов к PostgreSQL, снимки pod и логов API, команду и ответ predict через port-forward. | [433f30f: оформление скриншотов](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/433f30f), [832de74: исправления после ревью](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/832de74). [Отчет ДЗ1](reports/hw1/REPORT.md), [pytest](reports/hw1/pytest.jpg), [PostgreSQL](reports/hw1/database_select.jpg), [логи API](reports/hw1/post-log_in_k9s.jpg), [predict](reports/hw1/predict_from_port-forward.jpg). |
+| В отчете не было скриншотов проверок | Добавлены результаты pytest и запросов к PostgreSQL, снимки pod и логов API, команда и ответ predict через port-forward. | [433f30f: оформление скриншотов](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/433f30f), [832de74: исправления после ревью](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/832de74). [Отчет ДЗ1](reports/hw1/REPORT.md), [pytest](reports/hw1/pytest.jpg), [PostgreSQL](reports/hw1/database_select.jpg), [логи API](reports/hw1/post-log_in_k9s.jpg), [predict](reports/hw1/predict_from_port-forward.jpg). |
 | В README не было трех команд проверки сервиса | В Quickstart приведены запросы к health, ready и predict с good.json через Ingress, ожидаемые ответы и порядок запуска платформы из клона репозитория. | [6a68471: добавлены команды проверки](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/6a68471), [текущий раздел README](README.md#7-развернуть-api). Проверки health/ready/predict также выполняет [успешный deploy 39156310968](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39156310968/job/117760378407). |
 
+### ДЗ4: ответ прежней моделью при плохих данных
+
+| Пункт фидбека | Что сделано | Коммит и подтверждение |
+| --- | --- | --- |
+| Не был сохранен ответ API прежней моделью при плохой выгрузке | 25 октября повторены доставка плохого указателя, отказ validate и восстановление. Predict после красного validate вернул HTTP 200 с той же версией v2, что до поломки; запрос выполнен до deploy восстановления. | [Поломка 6334848](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/63348481e8cb70c837d65b2b01af7d1da7dc2878), [revert 7014247](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/70142471fe493505e5232f32f49663c5dd02a310), [цепочка доказательств](#контрольный-повтор-25-октября-api-при-плохой-выгрузке). |
+
 ## 7. Что не закрыто
-
-### Доказательства
-
-- **НЕ ХВАТАЕТ:** успешных health/predict с прежней версией модели во время плохой выгрузки.
 
 ### Технические замечания из фидбека
 
