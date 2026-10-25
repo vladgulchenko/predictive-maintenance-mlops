@@ -15,6 +15,8 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .pre-commit-cache/
+.ruff_cache/
+.uv-cache/
 
 
 #Jupyter temporary files
@@ -30,3 +32,9 @@ __pycache__/
 
 
 .env
+
+# Local drafts and temporary output
+/temp/
+/tmp/
+/docs/FOLLOWUP.md
+/reports/hw3/UP_CHEATSHEET.md
