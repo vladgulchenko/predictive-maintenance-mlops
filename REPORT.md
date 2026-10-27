@@ -11,7 +11,7 @@
 | Пункт задания | Доказательство |
 | --- | --- |
 | **1. Платформа одной командой:** Quickstart, все pod Running, время запуска с нуля | [Quickstart](README.md#quickstart), [up.sh](platform/up.sh), [поды платформы](reports/hw4/get-pods.png), [зеленый deploy](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/39156310968). На Windows запуск с нуля занял примерно 5–10 минут при заранее установленных инструментах. |
-| **2. Метрики и дашборд:** RPS, p50/p95, панели модели и версия под трафиком | [Дашборд](reports/hw4/grafana-overview.png), [Locust](reports/hw4/locust-statistics.png). Показатели и ограничение панели score — в [разделе 3.2](#32-метрики-и-дашборд). |
+| **2. Метрики и дашборд:** RPS, p50/p95, панели модели и версия под трафиком | [Дашборд](reports/hw4/grafana-overview.png), [Locust](reports/hw4/locust-statistics.png). Показатели и исправление формата панели score — в [разделе 3.2](#32-метрики-и-дашборд). |
 | **3. DVC и S3:** указатель в Git, скрин бакета, только .dvc в образе | [Указатель](data/raw/ai4i2020.csv.dvc), [бакет RustFS](reports/hw4/rustfs-bucket.png), [содержимое API-контейнера](reports/hw4/.dvc_in_container.png). Содержимое контейнера из GHCR-образа проверено через `kubectl exec`; способ проверки описан в разделе 3.3. |
 | **4. Pandera:** зеленый CI, valid=false и открытый failure_cases.csv | [Tests job](https://github.com/vladgulchenko/predictive-maintenance-mlops/actions/runs/38957337197/job/117163397508), [pytest](reports/hw4/pytest_step.png), [неуспешный validate](reports/hw4/validate-run.png), [failure_cases.csv](reports/hw4/validate-artifact.png). |
 | **5. Airflow:** три сценария DAG, Registry с Aliases, переключение версии и трафик без ошибок | [Продвижение](reports/hw4/dag.png), [отказ гейта](reports/hw4/dag_not_promoted.png), [плохая выгрузка](reports/hw4/airflow_after_bad_data.png), [смена версии](reports/hw4/grafana-in-rollout.png), [Locust при выкате](reports/hw4/locust-statistics-rollout.png). После повторного развертывания сохранены [Registry с Aliases](reports/hw4/mlflow_aliases.png) и [успешный Graph](reports/hw4/airflow-graph.png). [Контрольный повтор 25 октября](#контрольный-повтор-25-октября-api-при-плохой-выгрузке) подтверждает HTTP 200 с прежней моделью после отказа validate. |
@@ -73,7 +73,9 @@ PostgreSQL в текущем Kubernetes-манифесте не подключа
 
 ![Locust: обычный прогон через Ingress](reports/hw4/locust-statistics.png)
 
-Locust показывает накопленную статистику на момент снимка, а панели Grafana используют временные окна: их счетчики и квантили не обязаны совпадать. Средний score и доля положительных предсказаний не являются точностью модели. Панель `Prediction score distribution in 15m` пока показывает накопительные бакеты, а не частоты отдельных интервалов.
+Locust показывает накопленную статистику на момент снимка, а панели Grafana используют временные окна: их счетчики и квантили не обязаны совпадать. Средний score и доля положительных предсказаний не являются точностью модели.
+
+Для панели `Prediction score distribution in 15m` задан `format: heatmap`, чтобы показывать число предсказаний в отдельных интервалах score. Скриншот выше снят до исправления и показывает накопительные бакеты.
 
 ### 3.3. Данные в DVC и S3
 
@@ -306,6 +308,12 @@ MLflow run `003551de68234db0a8dcbe560917241b`: FAILED, `valid=false`, плохо
 | Пункт фидбека | Что сделано | Подтверждение |
 | --- | --- | --- |
 | Подготовка данных в Quickstart зависела от системного окончания строк и давала другой MD5 на Linux/macOS | В to_csv явно задан `lineterminator="\r\n"`, CSV сохраняется как UTF-8. Сохраняются исходные MD5 `5d9ee05b71518e3e7e71e6e60c7da425` и размер 567521 байт; DVC-указатель не меняется. | [Шаг 4 Quickstart](README.md#4-загрузить-данные), [DVC-указатель](data/raw/ai4i2020.csv.dvc). |
+
+### ДЗ4: распределение score в Grafana
+
+| Пункт фидбека | Что сделано | Подтверждение |
+| --- | --- | --- |
+| Панель распределения score показывала накопительные бакеты как независимые столбцы | В запрос панели добавлен `format: heatmap` для отображения отдельных интервалов score. | [Коммит 3a59434](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/3a59434), [конфигурация дашборда](k8s/monitoring/dashboard.yaml). |
 
 ## 7. Восемь вопросов
 
