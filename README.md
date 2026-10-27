@@ -197,7 +197,7 @@ with urllib.request.urlopen(url, timeout=60) as response:
 df = df.loc[df["RNF"] == 0].copy()
 df.insert(5, "Temperature delta [K]",
           (df["Process temperature [K]"] - df["Air temperature [K]"]).round(1))
-content = df.to_csv(index=False).encode("utf-8")
+content = df.to_csv(index=False, lineterminator="\r\n").encode("utf-8")
 expected = "5d9ee05b71518e3e7e71e6e60c7da425"
 assert hashlib.md5(content).hexdigest() == expected, "MD5 mismatch: stop here"
 Path("data/raw/ai4i2020.csv").write_bytes(content)
@@ -205,7 +205,7 @@ print("Rows:", len(df), "MD5:", expected)
 PY
 ```
 
-**Результат:** 9981 строка и MD5 `5d9ee05b71518e3e7e71e6e60c7da425`. Если проверка хеша не прошла, не выполняй следующие команды.
+**Результат:** 9981 строка, 567521 байт и MD5 `5d9ee05b71518e3e7e71e6e60c7da425`. CSV записывается в UTF-8 с окончаниями строк CRLF независимо от ОС. Если проверка хеша не прошла, не выполняй следующие команды.
 
 </details>
 
