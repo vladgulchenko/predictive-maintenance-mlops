@@ -139,18 +139,14 @@ jobs:
           curl --fail -s --retry 10 --retry-all-errors -H "$H" "$U/ready" | tee ready.json
           echo
 
-          python3 -c "import json; h=json.load(open('health.json')); assert 'predictive-maintenance:v' in h['model_version'] and h['model_version'].endswith('@champion'), h"
-
           curl --fail -s --retry 5 --retry-all-errors -X POST "$U/v1/predict" \
             -H "$H" \
             -H "Content-Type: application/json" \
             -d @good.json | tee pred.json
           echo
 
-          python3 -c "import json; r=json.load(open('pred.json')); assert 0 <= r['score'] <= 1, r"
-
           curl --fail -s --retry 10 --retry-all-errors -H "$H" "$U/metrics" | tee metrics.txt
-          grep -q "predictive_maintenance_model_info" metrics.txt
+          python3 scripts/check_smoke.py
 
           kubectl get servicemonitor predictive-maintenance-api
           kubectl get configmap predictive-maintenance-dashboard -n monitoring
