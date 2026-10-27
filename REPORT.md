@@ -301,6 +301,12 @@ MLflow run `003551de68234db0a8dcbe560917241b`: FAILED, `valid=false`, плохо
 | Диапазон score не проверял ожидаемое предсказание | Добавлены проверка `machine_failure=false` на good.json и совпадение model_version с health. Проверка диапазона score сохранена. | [Коммит e7c5ef8](https://github.com/vladgulchenko/predictive-maintenance-mlops/commit/e7c5ef8), [проверка артефактов smoke](scripts/check_smoke.py), [тест API](tests/test_smoke.py), [регрессионные тесты](tests/test_ci_smoke.py). |
 | Поиск имени метрики проходил на строке HELP без версии | Проверяется образец метрики с конкретной версией из health и значением 1. Один HELP, другая версия, нулевое значение и дублирующиеся образцы отклоняются. | [Вызов в workflow](.github/workflows/ci.yaml), [тесты, включая вывод prometheus-client](tests/test_ci_smoke.py). |
 
+### ДЗ4: одинаковый CSV на разных ОС
+
+| Пункт фидбека | Что сделано | Подтверждение |
+| --- | --- | --- |
+| Подготовка данных в Quickstart зависела от системного окончания строк и давала другой MD5 на Linux/macOS | В to_csv явно задан `lineterminator="\r\n"`, CSV сохраняется как UTF-8. Сохраняются исходные MD5 `5d9ee05b71518e3e7e71e6e60c7da425` и размер 567521 байт; DVC-указатель не меняется. | [Шаг 4 Quickstart](README.md#4-загрузить-данные), [DVC-указатель](data/raw/ai4i2020.csv.dvc). |
+
 ## 7. Восемь вопросов
 
 ### 7.1. Как восстановить код и данные модели версии N?
