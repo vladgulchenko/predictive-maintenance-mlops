@@ -4,7 +4,7 @@ def test_predict_smoke(client, good_row):
 
     body = r.json()
     assert 0.0 <= body["score"] <= 1.0
-    assert isinstance(body["machine_failure"], bool)
+    assert body["machine_failure"] is False
     assert body["latency_ms"] >= 0
     assert body["model_version"]
     assert body["request_id"]
