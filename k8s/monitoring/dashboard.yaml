@@ -83,7 +83,7 @@ data:
           "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "options": {"orientation": "vertical", "displayMode": "basic", "reduceOptions": {"calcs": ["lastNotNull"]}},
-          "targets": [{"refId": "A", "expr": "sum by (le) (increase(predictive_maintenance_score_bucket[15m]))", "legendFormat": "{{le}}"}]
+          "targets": [{"refId": "A", "expr": "sum by (le) (increase(predictive_maintenance_score_bucket[15m]))", "legendFormat": "{{le}}", "format": "heatmap"}]
         },
         {
           "id": 8,
